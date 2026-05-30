@@ -1,0 +1,185 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile containing roles, wallet, and contact information.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string", "enum": ["customer", "admin", "seller", "rider"] },
+        "name": { "type": "string" },
+        "storeName": { "type": "string" },
+        "vehicleNumber": { "type": "string" },
+        "address": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "walletBalance": { "type": "number" },
+        "walletTransactions": { "type": "array" },
+        "firebaseUid": { "type": "string" }
+      },
+      "required": ["id", "email", "phone", "role", "name", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Store products with pricing, stock and seller links.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "originalPrice": { "type": "number" },
+        "image": { "type": "string" },
+        "category": { "type": "string" },
+        "stock": { "type": "number" },
+        "unit": { "type": "string" },
+        "sellerId": { "type": "string" },
+        "sellerName": { "type": "string" },
+        "deliveryMinutes": { "type": "number" },
+        "description": { "type": "string" },
+        "isTrending": { "type": "boolean" },
+        "isRecommended": { "type": "boolean" },
+        "variants": { "type": "array" }
+      },
+      "required": ["id", "name", "price", "image", "category", "stock", "unit", "sellerId", "sellerName", "deliveryMinutes", "description"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order with status tracking and delivery rider details.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerName": { "type": "string" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "deliveryFee": { "type": "number" },
+        "discount": { "type": "number" },
+        "total": { "type": "number" },
+        "status": { "type": "string", "enum": ["placed", "confirmed", "dispatched", "delivered", "rejected", "refunded"] },
+        "createdAt": { "type": "string" },
+        "address": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "paymentStatus": { "type": "string", "enum": ["pending", "success", "failed", "refunded"] },
+        "transactionId": { "type": "string" },
+        "riderId": { "type": "string" },
+        "riderName": { "type": "string" },
+        "riderPhone": { "type": "string" },
+        "sellerId": { "type": "string" },
+        "packingStatus": { "type": "string", "enum": ["pending", "accepted", "preparing", "packing", "ready", "delayed", "rejected"] },
+        "rejectionReason": { "type": "string" },
+        "refundReason": { "type": "string" },
+        "refundedAt": { "type": "string" },
+        "otp": { "type": "string" }
+      },
+      "required": ["id", "customerPhone", "items", "subtotal", "deliveryFee", "discount", "total", "status", "createdAt", "address", "paymentMethod", "sellerId"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Product categories.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "icon": { "type": "string" },
+        "color": { "type": "string" }
+      },
+      "required": ["id", "name", "icon", "color"]
+    },
+    "Seller": {
+      "title": "Seller",
+      "description": "Seller partner registration profiles.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "storeName": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "storeName", "ownerName", "phone", "email", "address", "status", "createdAt"]
+    },
+    "Rider": {
+      "title": "Rider",
+      "description": "Delivery partner profiles.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "vehicleNumber": { "type": "string" },
+        "status": { "type": "string", "enum": ["available", "delivering", "offline"] },
+        "activeOrderId": { "type": "string" },
+        "earnings": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "phone", "vehicleNumber", "status", "earnings", "createdAt"]
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "Promotional discounts.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "discountType": { "type": "string", "enum": ["percentage", "flat_discount"] },
+        "discountValue": { "type": "number" },
+        "minOrderValue": { "type": "number" },
+        "description": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["code", "discountType", "discountValue", "minOrderValue", "description", "isActive"]
+    },
+    "Banner": {
+      "title": "Banner",
+      "description": "Promotional hero banners.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "categoryLink": { "type": "string" },
+        "discountBadge": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "title", "imageUrl", "isActive"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Contains user registration profiles and internal wallets balance."
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Contains catalog of items to purchase."
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Contains buyer orders for delivery."
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Contains the list of available categories."
+    },
+    "/sellers/{sellerId}": {
+      "schema": "Seller",
+      "description": "Contains dark store owner profiles."
+    },
+    "/riders/{riderId}": {
+      "schema": "Rider",
+      "description": "Contains delivery runner profiles."
+    },
+    "/coupons/{couponId}": {
+      "schema": "Coupon",
+      "description": "Contains promotional coupons definition."
+    },
+    "/banners/{bannerId}": {
+      "schema": "Banner",
+      "description": "Contains advertising banners showcased on customer dashboard."
+    }
+  }
+}

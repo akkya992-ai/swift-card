@@ -1,0 +1,167 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Catch-all safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ----- GLOBAL HELPERS (Phase 3 Primitives) -----
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == "akkya992@gmail.com"
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // ----- VALIDATION BLUEPRINTS (The "Anti-Update-Gap") -----
+
+    function isValidUser(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.phone is string && data.phone.size() <= 32 &&
+             data.role in ['customer', 'admin', 'seller', 'rider'] &&
+             data.name is string && data.name.size() <= 128 &&
+             (!('storeName' in data) || data.storeName is string) &&
+             (!('vehicleNumber' in data) || data.vehicleNumber is string) &&
+             (!('address' in data) || data.address is string) &&
+             (!('walletBalance' in data) || (data.walletBalance is number && data.walletBalance >= 0)) &&
+             (!('walletTransactions' in data) || (data.walletTransactions is list && data.walletTransactions.size() <= 500));
+    }
+
+    function isValidProduct(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 200 &&
+             data.price is number && data.price >= 0 &&
+             data.image is string && data.image.size() <= 512 &&
+             data.category is string && data.category.size() <= 64 &&
+             data.stock is number && data.stock >= 0 &&
+             data.unit is string && data.unit.size() <= 32 &&
+             data.sellerId is string && data.sellerId.size() <= 128 &&
+             data.sellerName is string && data.sellerName.size() <= 128 &&
+             data.deliveryMinutes is number && data.deliveryMinutes >= 0 &&
+             data.description is string && data.description.size() <= 1000;
+    }
+
+    function isValidOrder(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.customerPhone is string && data.customerPhone.size() <= 32 &&
+             data.items is list && data.items.size() <= 100 &&
+             data.subtotal is number && data.subtotal >= 0 &&
+             data.deliveryFee is number && data.deliveryFee >= 0 &&
+             data.discount is number && data.discount >= 0 &&
+             data.total is number && data.total >= 0 &&
+             data.status in ['placed', 'confirmed', 'dispatched', 'delivered', 'rejected', 'refunded'] &&
+             data.sellerId is string && data.sellerId.size() <= 128 &&
+             (!('packingStatus' in data) || data.packingStatus in ['pending', 'accepted', 'preparing', 'packing', 'ready', 'delayed', 'rejected']) &&
+             (!('riderId' in data) || data.riderId is string) &&
+             (!('riderName' in data) || data.riderName is string) &&
+             (!('riderPhone' in data) || data.riderPhone is string) &&
+             (!('address' in data) || data.address is string);
+    }
+
+    // ----- COLLECTION GATEWAYS -----
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isSignedIn() && isOwner(userId) && isValidUser(incoming()) && incoming().role != 'admin'; 
+      allow update: if isValidId(userId) && isOwner(userId) && isValidUser(incoming()) && 
+                    incoming().role == existing().role && 
+                    (!('walletBalance' in incoming()) || incoming().walletBalance == existing().walletBalance) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'address', 'storeName', 'vehicleNumber', 'walletTransactions']);
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    match /products/{productId} {
+      allow get: if isValidId(productId);
+      allow list: if true; // Public catalog reads
+      allow create: if isValidId(productId) && isSignedIn() && isValidProduct(incoming()) && (isAdmin() || incoming().sellerId == request.auth.uid);
+      allow update: if isValidId(productId) && isSignedIn() && isValidProduct(incoming()) && (
+        isAdmin() || (
+          existing().sellerId == request.auth.uid && 
+          incoming().sellerId == existing().sellerId &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'price', 'originalPrice', 'image', 'category', 'stock', 'unit', 'description', 'variants', 'isTrending', 'isRecommended'])
+        )
+      );
+      allow delete: if isValidId(productId) && isSignedIn() && (isAdmin() || existing().sellerId == request.auth.uid);
+    }
+
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId) && isSignedIn() && (
+        isAdmin() || 
+        resource.data.sellerId == request.auth.uid || 
+        resource.data.riderId == request.auth.uid ||
+        resource.data.customerPhone == request.auth.token.phone_number ||
+        resource.data.id == orderId
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() || 
+        resource.data.sellerId == request.auth.uid || 
+        resource.data.riderId == request.auth.uid ||
+        resource.data.customerPhone == request.auth.token.phone_number
+      );
+      allow create: if isValidId(orderId) && isSignedIn() && isValidOrder(incoming());
+      allow update: if isValidId(orderId) && isSignedIn() && isValidOrder(incoming()) && (
+        isAdmin() ||
+        // Action: Pack/Prepare (Seller)
+        (existing().sellerId == request.auth.uid && incoming().sellerId == existing().sellerId && incoming().diff(existing()).affectedKeys().hasOnly(['packingStatus', 'rejectionReason'])) ||
+        // Action: Delivery status / accept order / navigate (Rider)
+        (incoming().riderId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['riderId', 'riderName', 'riderPhone', 'status', 'otp'])) ||
+        (existing().riderId == request.auth.uid && incoming().riderId == existing().riderId && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'otp']))
+      );
+      allow delete: if isValidId(orderId) && isAdmin();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /sellers/{sellerId} {
+      allow get: if isValidId(sellerId);
+      allow list: if true;
+      allow create, update: if isValidId(sellerId) && isSignedIn() && (isAdmin() || isOwner(sellerId));
+      allow delete: if isValidId(sellerId) && isAdmin();
+    }
+
+    match /riders/{riderId} {
+      allow get: if isValidId(riderId);
+      allow list: if true;
+      allow create, update: if isValidId(riderId) && isSignedIn() && (isAdmin() || isOwner(riderId));
+      allow delete: if isValidId(riderId) && isAdmin();
+    }
+
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
