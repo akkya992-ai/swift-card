@@ -1,0 +1,17 @@
+{
+  "appId": "com.swiftcart.app",
+  "appName": "Swift Cart",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "allowNavigation": ["*"]
+  },
+  "android": {
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": true,
+    "buildOptions": {
+      "releaseType": "APK"
+    }
+  }
+}

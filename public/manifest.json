@@ -1,0 +1,25 @@
+{
+  "name": "BlinkStore Express Grocery",
+  "short_name": "BlinkStore",
+  "description": "Instant grocery ordering from high-sanitation dark stores with lightning-fast 10-minute cargo delivery.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#10b981",
+  "orientation": "portrait",
+  "categories": ["shopping", "food"],
+  "icons": [
+    {
+      "src": "/icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%2310b981%22 rx=%2224%22/><text y=%22.72em%22 x=%2250%25%22 text-anchor=%22middle%22 font-size=%2260%22 font-weight=%22black%22 fill=%22white%22>B</text><text y=%22.95em%22 x=%2275%25%22 font-size=%2235%22>⚡</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

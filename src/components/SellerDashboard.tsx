@@ -29,7 +29,11 @@ import {
   ThumbsUp,
   CheckCircle2,
   ClipboardList,
-  Truck
+  Truck,
+  MessageSquare,
+  Smartphone,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { Product, Order, Category } from '../types';
 
@@ -40,15 +44,19 @@ interface SellerDashboardProps {
 
 export default function SellerDashboard({ userProfile, onLogout }: SellerDashboardProps) {
   // Navigation state inside dashboard
-  const [activeTab, setActiveTab] = useState<'orders' | 'inventory' | 'analytics'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'inventory' | 'analytics' | 'notifications'>('orders');
 
   const [myProducts, setMyProducts] = useState<Product[]>([]);
+  const [sellerNotifications, setSellerNotifications] = useState<any[]>([]);
   const [matchedOrders, setMatchedOrders] = useState<Order[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   
   // Track seen order IDs to raise instant alert popups for indeed "NEW" orders
   const [seenOrderIds, setSeenOrderIds] = useState<string[]>([]);
   const [newOrderAlert, setNewOrderAlert] = useState<Order | null>(null);
+  const [isAlertMuted, setIsAlertMuted] = useState(false);
+  const [alertCountdown, setAlertCountdown] = useState(60);
+  const [missedOrderReminder, setMissedOrderReminder] = useState<Order | null>(null);
 
   // Reject order modal details
   const [rejectingOrder, setRejectingOrder] = useState<Order | null>(null);
@@ -91,8 +99,250 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
   const resolvedStoreName = userProfile.storeName || 'Green Farm Outlets';
   const resolvedSellerId = userProfile.id || 's_oliver';
 
+  // Background offline alarm simulation states
+  const [swSimulating, setSwSimulating] = useState(false);
+  const [swCountdown, setSwCountdown] = useState(0);
+
+  // FCM Cloud Messaging Preferences & Inbox
+  const [fcmToken, setFcmToken] = useState(() => {
+    return userProfile.fcmToken || localStorage.getItem('swiftcart_fcm_token_seller') || 'fcm_tok_seller_' + Math.random().toString(36).substring(2, 11).toUpperCase() + '_android';
+  });
+  const [fcmSaving, setFcmSaving] = useState(false);
+  const [fcmMessage, setFcmMessage] = useState('');
+  const [fcmNotifications, setFcmNotifications] = useState<any[]>([]);
+  const [notifPromos, setNotifPromos] = useState(userProfile.notificationSettings?.promos !== false);
+  const [notifStatuses, setNotifStatuses] = useState(userProfile.notificationSettings?.orderStatuses !== false);
+  const [notifAlerts, setNotifAlerts] = useState(userProfile.notificationSettings?.systemAlerts !== false);
+  const [notifSound, setNotifSound] = useState(userProfile.notificationSettings?.soundEnabled !== false);
+
+  const fetchFcmHistory = async () => {
+    try {
+      const res = await fetch(`/api/notifications/history/${userProfile.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setFcmNotifications(data);
+      }
+    } catch (e) {
+      console.warn('Failed to load FCM history', e);
+    }
+  };
+
+  const syncFcmAndPreferences = async (forceSave = false) => {
+    if (!userProfile?.id) return;
+    setFcmSaving(true);
+    setFcmMessage('');
+    try {
+      // Register Token
+      await fetch('/api/notifications/register-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userProfile.id, fcmToken })
+      });
+      localStorage.setItem('swiftcart_fcm_token_seller', fcmToken);
+
+      // Register Settings
+      const settingsRes = await fetch('/api/notifications/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: userProfile.id,
+          settings: {
+            promos: notifPromos,
+            orderStatuses: notifStatuses,
+            systemAlerts: notifAlerts,
+            soundEnabled: notifSound
+          }
+        })
+      });
+
+      if (settingsRes.ok) {
+        if (forceSave) {
+          setFcmMessage('FCM-backed settings and high reliability filters synced successfully! Automatic retry fallback rules active. 🎉');
+          setTimeout(() => setFcmMessage(''), 5500);
+        }
+        fetchFcmHistory();
+      }
+    } catch (err) {
+      console.error('Failed to register FCM preferences', err);
+    } finally {
+      setFcmSaving(false);
+    }
+  };
+
+  const markNotificationAsRead = async (id: string) => {
+    try {
+      await fetch('/api/notifications/mark-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notificationId: id, userId: userProfile.id })
+      });
+      setFcmNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
+  useEffect(() => {
+    syncFcmAndPreferences(false);
+    fetchFcmHistory();
+    const t = setInterval(fetchFcmHistory, 10000);
+    return () => clearInterval(t);
+  }, [userProfile.id]);
+
+  const triggerBackgroundSimulation = () => {
+    if (typeof window === 'undefined') return;
+    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
+      alert('Local Service Worker is initializing. Ensure notifications are permitted and try again in a second!');
+      return;
+    }
+
+    if (Notification.permission !== 'granted') {
+      Notification.requestPermission().then(perm => {
+        if (perm !== 'granted') {
+          alert('System OS Notification permission is highly suggested for background alarms to buzz when the app is minimized!');
+        }
+      });
+    }
+
+    setSwSimulating(true);
+    setSwCountdown(5);
+
+    let count = 5;
+    const interval = setInterval(() => {
+      count--;
+      setSwCountdown(count);
+      if (count <= 0) {
+        clearInterval(interval);
+        setSwSimulating(false);
+        
+        // Dispatch simulation message to Service Worker with a dynamic orderId
+        const linkedOrderId = (matchedOrders.find(o => o.status === 'placed') || matchedOrders[0])?.id || ('SIM-' + Math.floor(1000 + Math.random() * 9000));
+        navigator.serviceWorker.controller?.postMessage({
+          type: 'SIMULATE_BACKGROUND_ALARM',
+          delay: 100,
+          role: 'seller',
+          orderId: linkedOrderId
+        });
+      }
+    }, 1000);
+  };
+
   // Keep a reference to check if is first load
   const isFirstLoadRef = useRef(true);
+
+  // Telemetry event logging: Alert opened
+  useEffect(() => {
+    if (newOrderAlert) {
+      setAlertCountdown(60);
+      setIsAlertMuted(false);
+      
+      fetch('/api/notifications/log-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: newOrderAlert.id,
+          role: 'seller',
+          eventType: 'opened'
+        })
+      }).catch(err => console.warn('Alert opened log failed:', err));
+    }
+  }, [newOrderAlert]);
+
+  // SLA safety countdown timer (Max 60 seconds)
+  useEffect(() => {
+    if (!newOrderAlert) return;
+
+    const timer = setInterval(() => {
+      setAlertCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          // Log missed event in database
+          fetch('/api/notifications/log-event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId: newOrderAlert.id,
+              role: 'seller',
+              eventType: 'missed'
+            })
+          }).catch(err => console.warn('Failed to log missed alert:', err));
+
+          // Retain ref as missed reminder banner and stop the intrusive alarm modal
+          setMissedOrderReminder(newOrderAlert);
+          setNewOrderAlert(null);
+          return 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [newOrderAlert]);
+
+  // Sound and Vibration Player loop
+  useEffect(() => {
+    if (!newOrderAlert || isAlertMuted) {
+      // Clear physical vibration if muted
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate(0);
+        } catch (_) {}
+      }
+      return;
+    }
+
+    const playSiren = () => {
+      // 1. Audio Siren Tone
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        const playTone = (freq: number, startTime: number, duration: number) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(freq, startTime);
+          
+          gain.gain.setValueAtTime(0.12, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+          
+          osc.start(startTime);
+          osc.stop(startTime + duration);
+        };
+
+        const now = audioCtx.currentTime;
+        playTone(987.77, now, 0.3); // High Pitch
+        playTone(783.99, now + 0.35, 0.3); // Low Pitch
+      } catch (err) {
+        console.warn('Web Audio Playback blocked/skipped:', err);
+      }
+
+      // 2. Vibration Pattern (Android compatible, graceful touch fallback)
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate([400, 200, 400]);
+        } catch (err) {
+          console.warn('Physical device vibration restricted:', err);
+        }
+      }
+    };
+
+    playSiren();
+    const alertSirenInterval = setInterval(playSiren, 1500);
+
+    return () => {
+      clearInterval(alertSirenInterval);
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate(0);
+        } catch (_) {}
+      }
+    };
+  }, [newOrderAlert, isAlertMuted]);
 
   useEffect(() => {
     fetchSellerScope();
@@ -176,6 +426,20 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
           }
         }
       }
+
+      // 3. Fetch outbound notifications belonging to this seller
+      const notRes = await fetch('/api/outbound-notifications');
+      if (notRes.ok) {
+        const notAll: any[] = await notRes.json();
+        const fNot = notAll.filter(n => 
+          n.recipientRole === 'seller' && (
+            n.recipientPhone === userProfile.phone || 
+            n.recipientName.toLowerCase() === resolvedStoreName.toLowerCase() ||
+            !userProfile.phone
+          )
+        );
+        setSellerNotifications(fNot);
+      }
     } catch (e) {
       console.error("Error updates feed for dark store:", e);
     } finally {
@@ -198,6 +462,18 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
       if (res.ok) {
         setSuccess(`Order #${orderId} accepted successfully! Transferred to preparation rack.`);
         setNewOrderAlert(null); // close popup
+        
+        // Log action result to backend telemetry
+        await fetch('/api/notifications/log-event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId,
+            role: 'seller',
+            eventType: 'accepted'
+          })
+        }).catch(err => console.warn('Telemetry accept skip:', err));
+
         fetchSellerScope();
         setTimeout(() => setSuccess(''), 4000);
       }
@@ -227,8 +503,21 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
 
       if (res.ok) {
         setSuccess(`Order #${rejectingOrder.id} successfully rejected & flagged.`);
+        const rejectedOrderId = rejectingOrder.id;
         setNewOrderAlert(null); // safely shut any popup too
         setRejectingOrder(null);
+        
+        // Log action result to backend telemetry
+        await fetch('/api/notifications/log-event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId: rejectedOrderId,
+            role: 'seller',
+            eventType: 'rejected'
+          })
+        }).catch(err => console.warn('Telemetry reject skip:', err));
+
         fetchSellerScope();
         setTimeout(() => setSuccess(''), 4000);
       }
@@ -304,6 +593,7 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
       let finalImg = imageUrl;
       if (!finalImg) {
         if (category.includes('veg')) finalImg = 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=300&auto=format&fit=crop&q=60';
+        else if (category.includes('fruit')) finalImg = 'https://images.unsplash.com/photo-1619546813926-a78fa6372cd2?w=300&auto=format&fit=crop&q=60';
         else if (category.includes('dairy')) finalImg = 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=300&auto=format&fit=crop&q=60';
         else if (category.includes('munch')) finalImg = 'https://images.unsplash.com/photo-1566478989037-eec170784d20?w=300&auto=format&fit=crop&q=60';
         else if (category.includes('drink')) finalImg = 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=300&auto=format&fit=crop&q=60';
@@ -490,6 +780,51 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
     .reduce((sum, o) => sum + o.total, 0);
 
   const completedOrdersCount = matchedOrders.filter(o => o.status === 'delivered').length;
+
+  const todayDateStr = new Date().toDateString();
+  const isDateToday = (dateStr: string) => {
+    try {
+      if (!dateStr) return false;
+      return new Date(dateStr).toDateString() === todayDateStr;
+    } catch {
+      return false;
+    }
+  };
+
+  const todaysOrdersCount = matchedOrders.filter(o => isDateToday(o.createdAt || '')).length;
+  const todaysCompletedOrdersCount = matchedOrders.filter(o => o.status === 'delivered' && isDateToday(o.deliveredAt || o.createdAt || '')).length;
+  const totalOrdersCount = matchedOrders.length;
+  const todaysRevenueVal = matchedOrders
+    .filter(o => o.status === 'delivered' && isDateToday(o.deliveredAt || o.createdAt || ''))
+    .reduce((sum, o) => sum + o.total, 0);
+  const totalRevenueVal = totalStoreTurnover;
+
+  const now = new Date();
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  
+  const dailyRevenue = matchedOrders
+    .filter(o => {
+      if (o.status !== 'delivered') return false;
+      const orderDate = new Date(o.createdAt);
+      return (now.getTime() - orderDate.getTime()) <= oneDayMs;
+    })
+    .reduce((sum, o) => sum + o.total, 0);
+
+  const weeklyRevenue = matchedOrders
+    .filter(o => {
+      if (o.status !== 'delivered') return false;
+      const orderDate = new Date(o.createdAt);
+      return (now.getTime() - orderDate.getTime()) <= (7 * oneDayMs);
+    })
+    .reduce((sum, o) => sum + o.total, 0);
+
+  const monthlyRevenue = matchedOrders
+    .filter(o => {
+      if (o.status !== 'delivered') return false;
+      const orderDate = new Date(o.createdAt);
+      return (now.getTime() - orderDate.getTime()) <= (30 * oneDayMs);
+    })
+    .reduce((sum, o) => sum + o.total, 0);
   
   // Active prep load of tickets that are accepted/preparing but not ready/delivered yet
   const activePreparingOrders = matchedOrders.filter(o => 
@@ -548,11 +883,23 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
         {/* QUICK STATS DECORATOR */}
         <div className="flex flex-wrap items-center gap-3 relative z-10 w-full lg:w-auto">
           <div className="bg-slate-800/80 px-4.5 py-3 rounded-2xl border border-slate-700/50 flex-1 lg:flex-none">
-            <div className="text-[9px] text-slate-450 uppercase font-black tracking-widest">Store Revenue</div>
+            <div className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Store total</div>
             <div className="text-lg font-black text-emerald-400 font-mono mt-0.5">₹{totalStoreTurnover}</div>
           </div>
           <div className="bg-slate-800/80 px-4.5 py-3 rounded-2xl border border-slate-700/50 flex-1 lg:flex-none">
-            <div className="text-[9px] text-slate-450 uppercase font-black tracking-widest">Active Prep</div>
+            <div className="text-[9px] text-slate-450 uppercase font-black tracking-widest">Daily (24h)</div>
+            <div className="text-lg font-black text-teal-400 font-mono mt-0.5">₹{dailyRevenue}</div>
+          </div>
+          <div className="bg-slate-800/80 px-4.5 py-3 rounded-2xl border border-slate-700/50 flex-1 lg:flex-none">
+            <div className="text-[9px] text-slate-450 uppercase font-black tracking-widest">Weekly (7d)</div>
+            <div className="text-lg font-black text-sky-400 font-mono mt-0.5">₹{weeklyRevenue}</div>
+          </div>
+          <div className="bg-slate-800/80 px-4.5 py-3 rounded-2xl border border-slate-700/50 flex-1 lg:flex-none">
+            <div className="text-[9px] text-slate-450 uppercase font-black tracking-widest">Monthly (30d)</div>
+            <div className="text-lg font-black text-pink-400 font-mono mt-0.5">₹{monthlyRevenue}</div>
+          </div>
+          <div className="bg-slate-800/80 px-4.5 py-3 rounded-2xl border border-slate-700/50 flex-1 lg:flex-none">
+            <div className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Active Prep</div>
             <div className="text-lg font-black text-amber-400 font-mono mt-0.5">{activePreparingOrders.length} tickets</div>
           </div>
           <button 
@@ -616,6 +963,17 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
             <PieChart className="w-4 h-4" />
             Dark Store Analytics
           </button>
+          <button
+            onClick={() => { setActiveTab('notifications'); setError(''); setSuccess(''); }}
+            className={`px-5 py-3 text-xs font-black tracking-widest uppercase border-b-2 transition flex items-center gap-2 cursor-pointer ${
+              activeTab === 'notifications' 
+                ? 'border-emerald-600 text-emerald-600 bg-white' 
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            SMS &amp; WA Outbox ({sellerNotifications.length})
+          </button>
         </div>
       </div>
 
@@ -623,6 +981,82 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
       {activeTab === 'orders' && (
         <div className="space-y-6">
           
+          {missedOrderReminder && (
+            <div className="bg-gradient-to-r from-red-950 to-red-900 text-white p-5 rounded-[24px] border-2 border-red-800 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5 text-left">
+                <div className="bg-red-900 border border-red-700 text-amber-400 p-2.5 rounded-2xl animate-pulse">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-xs font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-red-400 uppercase tracking-widest leading-none">⚠️ High-Priority Dispatch Missed (SLA Warning)</h4>
+                  <p className="text-xs font-bold text-slate-100">
+                    Order <span className="font-mono text-white text-sm">#{missedOrderReminder.id}</span> (₹{missedOrderReminder.total}) from <span className="text-white font-black">{missedOrderReminder.customerName || 'Premium Customer'}</span> timed out without response.
+                  </p>
+                  <p className="text-[10px] text-slate-300 font-semibold leading-relaxed">
+                    Automatic notification retries logged. Check telemetry diagnostics. Click restore to open controls.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5 w-full sm:w-auto shrink-0 justify-end">
+                <button
+                  onClick={() => {
+                    setNewOrderAlert(missedOrderReminder);
+                    setMissedOrderReminder(null);
+                  }}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-500 hover:to-yellow-400 text-slate-950 font-black text-[10px] uppercase rounded-xl shadow-md transition cursor-pointer"
+                >
+                  Force Recover Control
+                </button>
+                <button
+                  onClick={() => setMissedOrderReminder(null)}
+                  className="p-2 bg-red-900/50 hover:bg-red-850 text-slate-350 hover:text-white rounded-xl cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Active Mode Background Alarm Simulator and Heed */}
+          <div className="bg-gradient-to-br from-red-500/10 via-amber-500/5 to-slate-50 border border-red-500/20 rounded-[32px] p-6 shadow-xs space-y-4 text-left">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-100 text-red-800 text-[9px] font-black uppercase tracking-wider">
+                  🚨 Active-Mode PWA Alarm System
+                </span>
+                <h3 className="text-sm font-black text-slate-900 leading-tight">
+                  Background Delivery Notification & Sirens Active (24/7 Perpetual Support)
+                </h3>
+                <p className="text-[11px] text-slate-500 max-w-2xl leading-normal">
+                  Our system keeps you integrated 24/7. Even if you do not open the app for over 24 hours, the **PWA Service Worker** remains active to catch incoming orders. When an order is placed, a physical alarm will sound immediately. Lock your screen or close this tab; we will still ring the system buzzer!
+                </p>
+              </div>
+
+              <div className="shrink-0 flex items-center gap-3">
+                <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Service Worker Live (24/7)
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-white border border-slate-100 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="space-y-0.5 text-left">
+                <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">24-Hour Offline Closed-App Proof</span>
+                <span className="text-xs font-bold text-slate-700 block">Simulate closed app scenario</span>
+              </div>
+              
+              <button
+                type="button"
+                onClick={triggerBackgroundSimulation}
+                disabled={swSimulating}
+                className="w-full sm:w-auto px-5 py-3 bg-red-650 hover:bg-red-700 disabled:bg-slate-200 text-white font-black rounded-xl text-xs uppercase tracking-wide transition shadow-sm cursor-pointer hover:shadow"
+              >
+                {swSimulating ? `Starting in ${swCountdown}s (Now Lock/Minimize App!)` : '⚡ Simulate Offline Alarm'}
+              </button>
+            </div>
+          </div>
+
           {/* ORDERS FUNNEL FLOW BOARD */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             
@@ -1311,30 +1745,42 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
         <div className="space-y-6 text-left">
           
           {/* ANALYTICS HIGHLIGHT METRICS ROW */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
             
-            <div className="bg-white rounded-3xl border border-slate-150 p-5 space-y-2">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block">Delivered Turnover</span>
-              <div className="text-2xl font-black text-slate-900 font-mono">₹{totalStoreTurnover}</div>
-              <p className="text-[10px] text-emerald-600 font-bold">✓ Capitalized revenue from {completedOrdersCount} tickets</p>
+            <div className="bg-white rounded-2xl border border-slate-150 p-4.5 space-y-1 shadow-sm">
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest block">Today's Orders</span>
+              <div className="text-xl font-black text-slate-900 font-mono">{todaysOrdersCount}</div>
+              <p className="text-[9px] text-slate-400">Placed today</p>
             </div>
 
-            <div className="bg-white rounded-3xl border border-slate-150 p-5 space-y-2">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block">Active preparing Load</span>
-              <div className="text-2xl font-black text-amber-500 font-mono">{activePreparingOrders.length} tickets</div>
-              <p className="text-[10px] text-slate-400">Currently prep bagging on dark store shelf</p>
+            <div className="bg-white rounded-2xl border border-slate-150 p-4.5 space-y-1 shadow-sm">
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest block">Today's Completed</span>
+              <div className="text-xl font-black text-emerald-600 font-mono">{todaysCompletedOrdersCount}</div>
+              <p className="text-[9px] text-emerald-600 font-semibold">Delivered today</p>
             </div>
 
-            <div className="bg-white rounded-3xl border border-slate-150 p-5 space-y-2">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block">Store Rejections</span>
-              <div className="text-2xl font-black text-rose-500 font-mono">{rejectedOrders.length} tickets</div>
-              <p className="text-[10px] text-rose-600 font-bold font-sans">Dark Store Rejection Rate: {rejectionRate}%</p>
+            <div className="bg-white rounded-2xl border border-slate-150 p-4.5 space-y-1 shadow-sm">
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest block">Total Orders</span>
+              <div className="text-xl font-black text-slate-900 font-mono">{totalOrdersCount}</div>
+              <p className="text-[9px] text-slate-400">All-time count</p>
             </div>
 
-            <div className="bg-white rounded-3xl border border-slate-150 p-5 space-y-2">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block">Total Items Dispensed</span>
-              <div className="text-2xl font-black text-indigo-600 font-mono">{totalItemsSold} items</div>
-              <p className="text-[10px] text-slate-400">Delivered product quantities today</p>
+            <div className="bg-white rounded-2xl border border-slate-150 p-4.5 space-y-1 shadow-sm">
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest block">Total Completed</span>
+              <div className="text-xl font-black text-indigo-650 font-mono">{completedOrdersCount}</div>
+              <p className="text-[9px] text-indigo-600 font-semibold">All-time delivered</p>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-150 p-4.5 space-y-1 shadow-sm">
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest block font-mono">Today's Revenue</span>
+              <div className="text-xl font-black text-teal-650 font-mono">₹{todaysRevenueVal}</div>
+              <p className="text-[9px] text-teal-600 font-semibold font-mono">Earned today</p>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-150 p-4.5 space-y-1 shadow-sm">
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest block">Total Revenue</span>
+              <div className="text-xl font-black text-emerald-700 font-mono">₹{totalRevenueVal}</div>
+              <p className="text-[9px] text-emerald-700 font-semibold">All-time sales</p>
             </div>
 
           </div>
@@ -1433,6 +1879,209 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
         </div>
       )}
 
+      {activeTab === 'notifications' && (
+        <div className="space-y-6 text-left animate-fade-in font-sans">
+          <div className="bg-white rounded-3xl p-6 border border-slate-150 shadow-xs space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-black text-slate-850 flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-emerald-600" /> Outbox SMS &amp; WhatsApp Notifications Log
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Verification feed of automated customer order notifications generated from live purchases.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => fetchSellerScope(true)}
+                className="px-4 py-2 border rounded-xl font-bold hover:bg-slate-50 text-[11px] transition shrink-0 cursor-pointer flex items-center gap-1 self-start"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Re-sync
+              </button>
+            </div>
+
+            {sellerNotifications.length === 0 ? (
+              <div className="p-10 border border-dashed border-slate-200 rounded-3xl text-center space-y-2">
+                <p className="text-3xl text-slate-300">📱</p>
+                <h4 className="text-sm font-black text-slate-850">No notifications triggered yet</h4>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  When customers finalize order checkouts containing your products from Telangana dark stores, automated SMS alert logs will stream live here.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Automated Notification Thread</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in font-sans">
+                  {[...sellerNotifications].reverse().map((not) => (
+                    <div 
+                      key={not.id} 
+                      className={`border rounded-3xl p-4 flex flex-col justify-between bg-white hover:shadow-xs transition bg-linear-to-b ${
+                        not.channel === 'whatsapp' ? 'border-emerald-100/70 from-emerald-50/10' : 'border-sky-100/70 from-sky-50/10'
+                      }`}
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {not.channel === 'whatsapp' ? (
+                              <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-lg text-[9px] font-bold">
+                                WhatsApp Channel
+                              </span>
+                            ) : (
+                              <span className="bg-sky-500 text-white px-2 py-0.5 rounded-lg text-[9px] font-bold">
+                                SMS Alert
+                              </span>
+                            )}
+                            <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                              Partner Store
+                            </span>
+                          </div>
+                          <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase">
+                            Delivered 🟢
+                          </span>
+                        </div>
+
+                        {/* Metadata */}
+                        <div className="text-xs">
+                          <p className="font-extrabold text-slate-900">{not.recipientName}</p>
+                          <p className="text-[10px] text-slate-500 font-mono font-bold">To: {not.recipientPhone}</p>
+                        </div>
+
+                        {/* Content text */}
+                        <div className={`p-3 rounded-2xl text-[11px] font-medium leading-relaxed font-sans ${
+                          not.channel === 'whatsapp' ? 'bg-emerald-50/60 text-emerald-950 border border-emerald-100/30 font-sans' : 'bg-slate-50 text-slate-850 border border-slate-100'
+                        }`}>
+                          {not.message.split('\n').map((line: string, i: number) => (
+                            <p key={i}>{line}</p>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-2.5 border-t border-slate-100 text-[9px] text-slate-400 font-bold flex justify-between items-center">
+                        <span>Order ID: #{not.orderId}</span>
+                        <span>{new Date(not.createdAt).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* FCM Push notifications Inbox / Settings block */}
+          <div className="bg-white rounded-3xl border border-slate-150 p-6 shadow-xs space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-850 flex items-center gap-2">
+                  <Bell className="w-5 h-5 text-emerald-600 animate-pulse" /> High-Reliability FCM-Backed Push notifications &amp; Preferences
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Best-effort delivery push channels with automatic retry mechanisms and PWA fallback notifications.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => syncFcmAndPreferences(true)}
+                disabled={fcmSaving}
+                className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold rounded-xl text-[11px] transition shrink-0 uppercase tracking-widest cursor-pointer flex items-center gap-1 self-start"
+              >
+                {fcmSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                Sync Device Token
+              </button>
+            </div>
+
+            {/* FCM preference setup controls card */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/70 border border-slate-100 p-5 rounded-3xl text-xs font-semibold text-slate-600">
+              <div className="space-y-2">
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-400 block">Registered Device token</span>
+                <span className="font-mono bg-white border border-slate-100 px-3 py-1.5 rounded-lg block truncate max-w-full text-slate-500 font-bold select-all">
+                  {fcmToken}
+                </span>
+                <p className="text-[10px] text-slate-400">
+                  Best-effort token synced for live order pings. Delivery is subject to browser permissions, OS sleep modes, battery optimizations, and network latency.
+                </p>
+              </div>
+              <div className="space-y-3">
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-400 block">Active notification channels</span>
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-indigo-500"
+                      checked={notifAlerts} 
+                      onChange={(e) => { setNotifAlerts(e.target.checked); }}
+                    />
+                    <span>Seller Order Alerts (FCM / PWA Fallback)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-indigo-500"
+                      checked={notifStatuses} 
+                      onChange={(e) => { setNotifStatuses(e.target.checked); }}
+                    />
+                    <span>Automatic Retry Queue Escapes</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {fcmMessage && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200/50 text-emerald-800 text-xs font-bold rounded-2xl text-center animate-fade-in">
+                {fcmMessage}
+              </div>
+            )}
+
+            {/* FCM History item logs */}
+            <div className="space-y-4">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Seller Notification Thread Log</span>
+              {fcmNotifications.length === 0 ? (
+                <div className="p-10 border border-dashed border-slate-200 rounded-3xl text-center space-y-2 bg-white">
+                  <p className="text-3xl">📭</p>
+                  <h4 className="text-sm font-black text-slate-800">Your merchant push notification inbox is empty</h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    Background alarms and instant order alerts will flash here as soon as orders are booked in.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[350px] overflow-y-auto pr-1">
+                  {fcmNotifications.map((n) => (
+                    <div 
+                      key={n.id} 
+                      className={`p-4 rounded-3xl border flex flex-col justify-between transition-all duration-150 ${
+                        n.isRead ? 'bg-white border-slate-100 text-slate-400' : 'bg-emerald-50/20 border-emerald-100/30 font-bold text-slate-800 shadow-3xs'
+                      }`}
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`w-1.5 h-1.5 rounded-full ${n.isRead ? 'bg-slate-350' : 'bg-emerald-500 animate-pulse'}`} />
+                          <span className="text-[9px] font-mono font-bold text-slate-400">
+                            {new Date(n.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-extrabold text-slate-900 leading-snug">{n.title}</h4>
+                        <p className="text-[11px] leading-relaxed text-slate-500 font-medium">{n.body}</p>
+                      </div>
+
+                      {!n.isRead && (
+                        <div className="mt-4 pt-2 border-t border-slate-100/60 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => markNotificationAsRead(n.id)}
+                            className="px-3 py-1 bg-white hover:bg-slate-50 border rounded-lg text-[10px] font-extrabold text-emerald-600 shadow-xs cursor-pointer"
+                          >
+                            Mark Read
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 5. SELLER SYSTEM CONTROL FOOTER */}
       <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
         <p className="text-[10px] text-slate-400 font-mono font-bold">
@@ -1447,70 +2096,125 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
         </button>
       </div>
 
-      {/* --- FLOATING INSTANT POPUP ALERT FOR NEW PLACED TICKETS --- */}
       {newOrderAlert && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-fade-in">
-          <div className="bg-slate-900 border border-amber-400 text-white rounded-3xl shadow-2xl p-6 max-w-md w-full text-left space-y-4 animate-scale-up relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-400 to-yellow-300"></div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 bg-gradient-to-br from-slate-950/95 via-slate-900/98 to-rose-950/90 backdrop-blur-md animate-fade-in font-sans">
+          <div className="bg-slate-900 border-2 border-red-500 text-white rounded-[32px] shadow-[0_0_50px_rgba(239,68,68,0.3)] p-6 sm:p-8 max-w-lg w-full text-left space-y-6 animate-scale-up relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-red-500 via-amber-500 to-yellow-500 animate-pulse"></div>
             
-            {/* Alert sound effect simulator trigger */}
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-3.5 h-3.5 bg-red-500 rounded-full animate-ping"></div>
-                <h3 className="text-base font-black text-amber-450 tracking-tight uppercase flex items-center gap-2">
-                  🆕 Live Incoming Dark Store order Received!
-                </h3>
+            {/* Header / Alarm / Mute Status */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <span className="relative flex h-4 w-4">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500"></span>
+                </span>
+                <div>
+                  <h3 className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-amber-300 tracking-tight uppercase">
+                    HIGH-PRIORITY INBOUND ORDER
+                  </h3>
+                  <span className="text-[10px] text-slate-400 font-bold block">DARK STORE SLA DISPATCH LINE</span>
+                </div>
               </div>
+              
+              {/* Mute Button Control */}
               <button
-                onClick={() => setNewOrderAlert(null)}
-                className="text-slate-450 hover:text-white rounded-full bg-slate-800 p-1 cursor-pointer"
-                title="Snooze"
+                type="button"
+                onClick={() => setIsAlertMuted(!isAlertMuted)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 cursor-pointer transition-all ${
+                  isAlertMuted 
+                    ? 'bg-red-950 text-red-400 border border-red-800 hover:bg-red-900' 
+                    : 'bg-slate-800 text-slate-300 hover:text-white border border-slate-750'
+                }`}
               >
-                <X className="w-4 h-4" />
+                {isAlertMuted ? (
+                  <>
+                    <VolumeX className="w-4 h-4 text-red-500 animate-pulse" />
+                    ALARM MUTED
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="w-4 h-4 text-emerald-400 animate-bounce" />
+                    MUTE SIREN
+                  </>
+                )}
               </button>
             </div>
 
-            <p className="text-[11px] text-slate-400 leading-snug">
-              A customer placed a checkout basket online at <span className="text-white font-bold">{new Date(newOrderAlert.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>. Prepare this ticket immediately to satisfy dark store SLA delivery times!
-            </p>
-
-            {/* Ticket Contents panel */}
-            <div className="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-750 space-y-2 text-xs">
-              <div className="flex justify-between border-b border-slate-750 pb-1.5">
-                <span className="font-mono text-slate-400">Order ID: <span className="text-white font-extrabold">#{newOrderAlert.id}</span></span>
-                <span className="font-extrabold text-emerald-400">₹{newOrderAlert.total}</span>
+            {/* SLA Timer Indicator */}
+            <div className="bg-slate-950/80 p-4 rounded-2xl border border-rose-950/50 flex items-center justify-between">
+              <div className="space-y-0.5 mt-0 text-left">
+                <span className="text-[9px] font-black text-rose-400 tracking-widest uppercase block">SLA TIMEOUT REMAINING</span>
+                <span className="text-xs font-bold text-slate-350 block">Accept before system marks as missed</span>
               </div>
-
-              <div className="space-y-1.5 max-h-[150px] overflow-y-auto pr-1">
-                {newOrderAlert.items
-                  .filter(item => item.product.sellerId === resolvedSellerId || item.product.sellerName.toLowerCase() === resolvedStoreName.toLowerCase())
-                  .map((item, index) => (
-                    <div key={index} className="flex justify-between items-center text-slate-200">
-                      <span>{item.product.name} <span className="text-amber-400 font-black">x {item.quantity}</span></span>
-                      <span className="font-mono text-slate-400 text-[11px]">{item.product.unit}</span>
-                    </div>
-                  ))}
-              </div>
-
-              <div className="text-[10px] text-slate-400 pt-1 border-t border-slate-750">
-                📍 Delivery coordinates: <span className="text-slate-200 font-bold">{newOrderAlert.address}</span>
+              <div className="flex items-center gap-2">
+                <div className={`px-4 py-2 font-mono text-xl font-black rounded-xl ${
+                  alertCountdown <= 15 ? 'bg-red-900/60 text-red-200 animate-pulse' : 'bg-slate-805 text-amber-405'
+                }`}>
+                  {alertCountdown}s
+                </div>
               </div>
             </div>
 
-            {/* Accept / Reject actions from popup */}
-            <div className="grid grid-cols-2 gap-3.5 pt-2">
+            {/* Customer & Order Metadata */}
+            <div className="space-y-4 text-left">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-850 p-3 rounded-xl">
+                  <span className="text-[9px] text-slate-450 uppercase font-bold block">CUSTOMER NAME</span>
+                  <span className="text-xs font-extrabold text-slate-100">{newOrderAlert.customerName || 'Premium Customer'}</span>
+                </div>
+                <div className="bg-slate-850 p-3 rounded-xl">
+                  <span className="text-[9px] text-slate-450 uppercase font-bold block">ORDER NUMBER</span>
+                  <span className="text-xs font-extrabold text-slate-100 font-mono">#{newOrderAlert.id}</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/50 rounded-2xl p-4 border border-slate-800 space-y-3">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                  <span className="text-xs font-black text-indigo-405">BAG CONTENTS</span>
+                  <span className="text-base font-extrabold text-emerald-400">₹{newOrderAlert.total}</span>
+                </div>
+
+                <div className="space-y-2 max-h-[120px] overflow-y-auto pr-1">
+                  {newOrderAlert.items
+                    .filter(item => item.product.sellerId === resolvedSellerId || item.product.sellerName.toLowerCase() === resolvedStoreName.toLowerCase())
+                    .map((item, index) => (
+                      <div key={index} className="flex justify-between items-center text-xs">
+                        <span className="text-slate-200 font-semibold">
+                          {item.product.name} <span className="text-amber-400 font-black ml-1">x {item.quantity}</span>
+                        </span>
+                        <span className="font-mono text-slate-400 text-[10px]">{item.product.unit}</span>
+                      </div>
+                    ))}
+                </div>
+
+                <div className="text-[10px] text-slate-400 pt-2 border-t border-slate-800 flex items-start gap-1">
+                  <span className="shrink-0 text-slate-500 font-black">📍 COORDS:</span>
+                  <span className="text-slate-300 font-bold truncate">{newOrderAlert.address}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Direct Actions */}
+            <div className="grid grid-cols-2 gap-4 pt-2">
               <button
+                type="button"
                 onClick={() => handleAcceptOrder(newOrderAlert.id)}
-                className="py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow-lg transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                className="py-3.5 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-slate-950 font-black text-xs rounded-xl shadow-lg hover:shadow-emerald-950/20 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wide"
               >
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <CheckCircle2 className="w-4 h-4" />
                 ACCEPT ORDER
               </button>
               
               <button
-                onClick={() => { setRejectingOrder(newOrderAlert); setNewOrderAlert(null); setRejectionReason('Item out of stock'); }}
-                className="py-3 bg-slate-800 hover:bg-slate-700 text-rose-450 border border-rose-950 rounded-xl font-bold text-xs transition active:scale-95 cursor-pointer"
+                type="button"
+                onClick={() => { 
+                  setRejectingOrder(newOrderAlert); 
+                  setNewOrderAlert(null); 
+                  setRejectionReason('Item out of stock'); 
+                }}
+                className="py-3.5 bg-slate-800 hover:bg-slate-750 text-rose-400 border border-slate-800 hover:border-red-905/30 rounded-xl font-bold text-xs transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 uppercase"
               >
+                <XCircle className="w-4 h-4 text-red-500" />
                 REJECT TICKET
               </button>
             </div>

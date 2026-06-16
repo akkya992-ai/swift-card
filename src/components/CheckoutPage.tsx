@@ -46,12 +46,16 @@ interface CheckoutPageProps {
     couponApplied: string | null, 
     finalDiscount: number,
     paymentStatus?: string,
-    transactionId?: string
+    transactionId?: string,
+    deliveryInstructions?: string,
+    deliveryTip?: number
   ) => Promise<any>;
   onBack: () => void;
   triggerNotification: (title: string, message: string, type: 'info' | 'success' | 'warning' | 'promo') => void;
   walletBalance?: number;
   onTopUpWallet?: (amount: number, gateway: string, gatewayStatus: string) => Promise<any>;
+  deliveryInstructions: string;
+  setDeliveryInstructions: (instructions: string) => void;
 }
 
 export default function CheckoutPage({
@@ -65,13 +69,24 @@ export default function CheckoutPage({
   onBack,
   triggerNotification,
   walletBalance = 1000,
-  onTopUpWallet
+  onTopUpWallet,
+  deliveryInstructions,
+  setDeliveryInstructions
 }: CheckoutPageProps) {
   
   // Choose address
   const activeAddressObj = savedAddresses.find(a => a.id === activeAddressId) || savedAddresses[0];
-  const [selectedAddress, setSelectedAddress] = useState(activeAddressObj?.address || 'Select Citywalk Mall, Saket, New Delhi');
-  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'RAZORPAY' | 'STRIPE' | 'WALLET'>('COD');
+  const [selectedAddress, setSelectedAddress] = useState(activeAddressObj?.address || '');
+
+  useEffect(() => {
+    const freshAddressObj = savedAddresses.find(a => a.id === activeAddressId) || savedAddresses[0];
+    if (freshAddressObj?.address) {
+      setSelectedAddress(freshAddressObj.address);
+    } else {
+      setSelectedAddress('');
+    }
+  }, [activeAddressId, savedAddresses]);
+  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'UPI' | 'CREDIT_CARD' | 'DEBIT_CARD'>('COD');
 
   // Coupon state
   const [couponCode, setCouponCode] = useState('');
@@ -123,6 +138,7 @@ export default function CheckoutPage({
   const [isToppingUp, setIsToppingUp] = useState(false);
 
   // Checkout states
+  const [deliveryTip, setDeliveryTip] = useState<number>(0);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [paymentError, setPaymentError] = useState<{ code: string; message: string; gateway: string } | null>(null);
   const [placedOrder, setPlacedOrder] = useState<any>(null);
@@ -241,7 +257,7 @@ export default function CheckoutPage({
 
   // Sum total
   const finalDiscount = originalDiscount + couponDiscount;
-  const netTotal = Math.max(0, subtotal + deliveryFee - finalDiscount);
+  const netTotal = Math.max(0, subtotal + deliveryFee + deliveryTip - finalDiscount);
 
   // Trigger wallet top up request
   const handleWalletTopUpSubmit = async (e: React.FormEvent) => {
@@ -284,28 +300,22 @@ export default function CheckoutPage({
       return;
     }
 
-    if (paymentMethod === 'WALLET') {
-      if (walletBalance < netTotal) {
-        setPaymentError({
-          code: 'WALLET_INSUFFICIENT_FUNDS',
-          message: `Your current wallet balance is ₹${walletBalance}, but this order requires ₹${netTotal}. Add some money to check out.`,
-          gateway: 'SwiftCart Wallet'
-        });
-        triggerNotification("Insufficient Wallet Balance ⚠️", "Top up or choose standard COD to proceed.", "warning");
+    if (paymentMethod === 'UPI') {
+      if (!upiId.trim() || !upiId.includes('@')) {
+        alert("Please enter a valid UPI ID (e.g. name@upi)");
         return;
       }
-      
-      // Perform wallet purchase check
       setIsSubmittingOrder(true);
       try {
-        const order = await onPlaceOrder(selectedAddress, 'Wallet', appliedCoupon, finalDiscount, 'success', 'TX-' + Math.floor(100000 + Math.random() * 900000));
+        const generatedTx = 'upi_' + Math.random().toString(36).substring(2, 10) + Math.floor(1000 + Math.random()*9000);
+        const order = await onPlaceOrder(selectedAddress, 'UPI', appliedCoupon, finalDiscount, 'success', generatedTx, deliveryInstructions, deliveryTip);
         setPlacedOrder(order || { id: 'SC-' + Math.floor(100000 + Math.random() * 900000), total: netTotal, createdAt: new Date().toISOString() });
-        triggerNotification("Order Confirmed 🎉", "Paid using SwiftCart Wallet balance automatically!", "success");
+        triggerNotification("Order Confirmed 🎉", "Paid using UPI ID " + upiId + " instantly!", "success");
       } catch (err: any) {
         setPaymentError({
-          code: 'WALLET_DEDUCT_FAILED',
-          message: err.message || "Failed to complete internal transaction.",
-          gateway: 'SwiftCart Wallet'
+          code: 'UPI_COLLECT_FAILED',
+          message: err.message || "Failed to process UPI payment collect request.",
+          gateway: 'UPI Secure'
         });
       } finally {
         setIsSubmittingOrder(false);
@@ -314,7 +324,7 @@ export default function CheckoutPage({
     else if (paymentMethod === 'COD') {
       setIsSubmittingOrder(true);
       try {
-        const order = await onPlaceOrder(selectedAddress, 'COD', appliedCoupon, finalDiscount, 'pending');
+        const order = await onPlaceOrder(selectedAddress, 'COD', appliedCoupon, finalDiscount, 'pending', undefined, deliveryInstructions, deliveryTip);
         setPlacedOrder(order || { id: 'SC-' + Math.floor(100000 + Math.random() * 900000), total: netTotal, createdAt: new Date().toISOString() });
         triggerNotification("Order Booked (COD) 📦", "Pay ₹" + netTotal + " directly to the delivery rider.", "success");
       } catch (err: any) {
@@ -322,13 +332,8 @@ export default function CheckoutPage({
       } finally {
         setIsSubmittingOrder(false);
       }
-    } 
-    else if (paymentMethod === 'RAZORPAY') {
-      // Trigger simulated Razorpay Modal
-      setShowRazorpayModal(true);
-    } 
-    else if (paymentMethod === 'STRIPE') {
-      // Validate Stripe Form fields
+    } else if (paymentMethod === 'CREDIT_CARD' || paymentMethod === 'DEBIT_CARD') {
+      // Validate Card Form fields
       if (cardNumber.replace(/\s/g, '').length < 16) {
         alert("Please complete the 16-digit card input.");
         return;
@@ -351,58 +356,29 @@ export default function CheckoutPage({
     }
   };
 
-  // Triggered when Razorpay Checkout modal completes
-  const handleRazorpayMockComplete = async () => {
-    setShowRazorpayModal(false);
-    if (!razorpaySuccessSimulate) {
-      setPaymentError({
-        code: 'RAZORPAY_AUTHENTICATION_DECLINED',
-        message: "Payment canceled by user or declined by customer's banking agent. Reference code: RP-ERR-2041",
-        gateway: 'Razorpay Security'
-      });
-      triggerNotification("Razorpay Declined ❌", "Payment was not completed. Click retry or use cash.", "warning");
-      return;
-    }
-
-    setIsSubmittingOrder(true);
-    try {
-      const generatedTx = 'pay_' + Math.random().toString(36).substring(2, 10) + Math.floor(1000 + Math.random()*9000);
-      const order = await onPlaceOrder(selectedAddress, 'Razorpay', appliedCoupon, finalDiscount, 'success', generatedTx);
-      setPlacedOrder(order || { id: 'SC-' + Math.floor(100000 + Math.random() * 900000), total: netTotal, createdAt: new Date().toISOString() });
-      triggerNotification("Razorpay Success 💳", "Payment authenticated securely on Razorpay server!", "success");
-    } catch (err: any) {
-      setPaymentError({
-        code: 'RAZORPAY_SETTLEMENT_OVERFLOW',
-        message: err.message || "Failed to publish processed order to SwiftCart.",
-        gateway: 'Razorpay'
-      });
-    } finally {
-      setIsSubmittingOrder(false);
-    }
-  };
-
   // Triggered when Stripe 3D-Secure complete
   const handleStripeMockComplete = async () => {
     setShowStripe3DS(false);
     if (!stripeSuccessSimulate) {
       setPaymentError({
-        code: 'STRIPE_3DS_SECURITY_FAIL',
+        code: 'CARD_SECURITY_FAIL',
         message: "Cardholder authentication verification failed. Reason: [CVV_EXPIRED] Expired or invalid CVV security configuration.",
-        gateway: 'Stripe 3D-Secure'
+        gateway: 'Secure Pay'
       });
-      triggerNotification("Stripe Declined 💳", "Credit card failed verification checkout. Please check parameters.", "warning");
+      triggerNotification("Card Declined 💳", "Credit card failed verification checkout. Please check parameters.", "warning");
       return;
     }
 
     setIsSubmittingOrder(true);
     try {
+      const cardTypeLabel = paymentMethod === 'CREDIT_CARD' ? 'Credit Card' : 'Debit Card';
       const generatedTx = 'ch_' + Math.random().toString(36).substring(2, 12);
-      const order = await onPlaceOrder(selectedAddress, 'Stripe', appliedCoupon, finalDiscount, 'success', generatedTx);
+      const order = await onPlaceOrder(selectedAddress, cardTypeLabel, appliedCoupon, finalDiscount, 'success', generatedTx, deliveryInstructions, deliveryTip);
       setPlacedOrder(order || { id: 'SC-' + Math.floor(100000 + Math.random() * 900000), total: netTotal, createdAt: new Date().toISOString() });
-      triggerNotification("Stripe Verified ⚡️", "Completed Stripe Elements session successfully!", "success");
+      triggerNotification(`${cardTypeLabel} Verified ⚡️`, "Transaction completed successfully!", "success");
     } catch (err: any) {
       setPaymentError({
-        code: 'STRIPE_CAPTURE_FAILED',
+        code: 'CARD_CAPTURE_FAILED',
         message: err.message || "Card capture was declined by card network.",
         gateway: 'Stripe'
       });
@@ -502,8 +478,8 @@ export default function CheckoutPage({
                 <div className="space-y-2 max-h-40 overflow-y-auto">
                   {cart.map((item, idx) => (
                     <div key={idx} className="flex justify-between text-slate-700 text-[11px]">
-                      <span>{item.product.name} <span className="text-slate-400">({item.product.unit})</span></span>
-                      <span className="font-mono text-slate-800 font-bold">x{item.quantity} • ₹{item.product.price * item.quantity}</span>
+                      <span>{item.product?.name || 'Deleted Product'} <span className="text-slate-400">({item.product?.unit || '1 unit'})</span></span>
+                      <span className="font-mono text-slate-800 font-bold">x{item.quantity} • ₹{(item.product?.price || 0) * item.quantity}</span>
                     </div>
                   ))}
                 </div>
@@ -517,6 +493,12 @@ export default function CheckoutPage({
                     <span>Delivery Fee:</span>
                     <span>₹{deliveryFee}</span>
                   </div>
+                  {deliveryTip > 0 && (
+                    <div className="flex justify-between text-emerald-700 font-semibold bg-emerald-500/5 px-1.5 py-0.5 rounded-lg">
+                      <span>Rider Delivery Tip 💝:</span>
+                      <span className="font-mono font-bold">₹{deliveryTip}</span>
+                    </div>
+                  )}
                   {finalDiscount > 0 && (
                     <div className="flex justify-between text-emerald-600 font-bold">
                       <span>Reward / Coupons code off:</span>
@@ -643,7 +625,7 @@ export default function CheckoutPage({
                   value={selectedAddress}
                   onChange={(e) => setSelectedAddress(e.target.value)}
                   className="w-full bg-slate-50 text-slate-800 p-2.5 rounded-xl border border-slate-200 text-xs focus:ring-1 focus:ring-emerald-500 outline-none leading-normal font-medium h-16"
-                  placeholder="e.g. B-4/45, Sector 15, Saket, New Delhi"
+                  placeholder="e.g. H.No 5-2/12, Main Road, Mahabubabad, Telangana"
                   required
                 />
                 {savedAddresses.length > 0 && (
@@ -665,6 +647,17 @@ export default function CheckoutPage({
                     ))}
                   </div>
                 )}
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Delivery Instructions for Rider 🛵:</span>
+                <input
+                  type="text"
+                  value={deliveryInstructions}
+                  onChange={(e) => setDeliveryInstructions(e.target.value)}
+                  className="w-full bg-slate-50 text-slate-800 p-2.5 rounded-xl border border-slate-200 text-xs focus:ring-1 focus:ring-emerald-500 outline-none leading-normal font-medium"
+                  placeholder="e.g. Leave at the gate, call upon arrival, etc."
+                />
               </div>
             </div>
 
@@ -723,6 +716,74 @@ export default function CheckoutPage({
                   </p>
                 )}
 
+                {/* Visual Clickable Voucher Deck */}
+                <div className="space-y-1.5">
+                  <span className="text-[9px] text-slate-400 font-black uppercase tracking-wider block">One-Click Available Promos</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-0.5">
+                    {[
+                      { code: 'FAST50', name: '₹50 flat savings', min: 'Min: ₹200', desc: 'On grocery staples', color: 'bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/25 text-amber-900 disabled:opacity-50' },
+                      { code: 'FRESH10', name: '10% on whole cart', min: 'Min: ₹150', desc: 'On fresh greens', color: 'bg-emerald-500/5 hover:bg-emerald-500/10 border-emerald-500/25 text-emerald-900 disabled:opacity-50' },
+                      { code: 'VIPDELIVERY', name: 'Free Express Shipping', min: 'Min: ₹0', desc: 'Zero delivery fee', color: 'bg-sky-500/5 hover:bg-sky-500/10 border-sky-500/25 text-sky-900 disabled:opacity-50' }
+                    ].map((voucher) => (
+                      <button
+                        key={voucher.code}
+                        type="button"
+                        onClick={() => {
+                          setCouponCode(voucher.code);
+                          setTimeout(() => {
+                            const inputCode = voucher.code;
+                            if (inputCode === 'FAST50') {
+                              if (subtotal < 200) {
+                                setCouponError("FAST50 requires a minimum order value of ₹200.");
+                                return;
+                              }
+                              setAppliedCoupon('FAST50');
+                              setCouponDiscount(50);
+                              setCouponSuccess("FAST50 applied successfully! Saved ₹50 flat.");
+                              triggerNotification("Coupon Applied 🎉", "FAST50 coupon code unlocked ₹50 discount!", "success");
+                              setCouponCode('');
+                            } else if (inputCode === 'FRESH10') {
+                              if (subtotal < 150) {
+                                setCouponError("FRESH10 requires a minimum order value of ₹150.");
+                                return;
+                              }
+                              setAppliedCoupon('FRESH10');
+                              const pctDiscount = Math.round(subtotal * 0.10);
+                              setCouponDiscount(pctDiscount);
+                              setCouponSuccess(`FRESH10 applied! Saved 10% (₹${pctDiscount}) on fresh greens.`);
+                              triggerNotification("10% Saved!", "FRESH10 coupon code applied successfully.", "success");
+                              setCouponCode('');
+                            } else if (inputCode === 'VIPDELIVERY') {
+                              setAppliedCoupon('VIPDELIVERY');
+                              setCouponDiscount(deliveryFee);
+                              setCouponSuccess("VIPDELIVERY code accepted! Standard delivery fees waived off entirely.");
+                              triggerNotification("Free Deliveries waived 🛵", "You saved ₹25 on delivery fees.", "success");
+                              setCouponCode('');
+                            }
+                          }, 50);
+                        }}
+                        className={`border border-dashed p-2.5 rounded-xl text-left transition active:scale-95 cursor-pointer relative overflow-hidden flex flex-col justify-between ${voucher.color} h-[85px]`}
+                        disabled={!!appliedCoupon}
+                      >
+                        {/* Ticket scissor cuts decoration */}
+                        <div className="absolute top-1/2 -left-1.5 w-3 h-3 rounded-full bg-white border-r border-slate-200 -translate-y-1/2"></div>
+                        <div className="absolute top-1/2 -right-1.5 w-3 h-3 rounded-full bg-white border-l border-slate-200 -translate-y-1/2"></div>
+
+                        <div className="space-y-0.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-black text-[9px] tracking-wider text-slate-800 bg-white/80 px-1 py-0.2 rounded border border-slate-200/55">
+                              {voucher.code}
+                            </span>
+                            <span className="text-[7.5px] font-bold opacity-75">{voucher.min}</span>
+                          </div>
+                          <p className="text-[9.5px] font-black tracking-tight leading-tight mt-1">{voucher.name}</p>
+                        </div>
+                        <p className="text-[8px] opacity-60 leading-none truncate">{voucher.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="bg-slate-50 rounded-xl p-2 px-3 text-[10px] text-slate-500 flex gap-2">
                   <span className="font-extrabold uppercase text-amber-600 shrink-0">Available Promos:</span>
                   <span className="font-semibold select-all font-mono">FAST50 (₹50 off, Min ₹200) • FRESH10 (10% off) • VIPDELIVERY (Free Shipping)</span>
@@ -734,7 +795,7 @@ export default function CheckoutPage({
             <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-xs space-y-4">
               <div className="flex items-center gap-2 text-slate-800 font-bold border-b border-slate-50 pb-2">
                 <CreditCard className="w-4.5 h-4.5 text-emerald-600" />
-                <h3 className="text-xs font-black text-slate-700 uppercase tracking-wide">3. Select Payment Gateway</h3>
+                <h3 className="text-xs font-black text-slate-700 uppercase tracking-wide">3. Select Payment Method</h3>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -745,114 +806,92 @@ export default function CheckoutPage({
                   onClick={() => setPaymentMethod('COD')}
                   className={`p-3 rounded-2xl text-left border flex flex-col gap-1 cursor-pointer transition ${
                     paymentMethod === 'COD'
-                      ? 'border-emerald-600 bg-emerald-50/30 text-slate-800'
-                      : 'border-slate-100 hover:bg-slate-50'
+                      ? 'border-emerald-600 bg-emerald-50/30 text-slate-850'
+                      : 'border-slate-100 hover:bg-slate-50 text-slate-700'
                   }`}
                 >
                   <span className="font-extrabold text-xs">Cash on Delivery (COD)</span>
-                  <span className="text-[9px] text-slate-400 line-clamp-2">No advance transaction. Pay cash or UPI scan at door on delivery.</span>
+                  <span className="text-[9px] text-slate-400 line-clamp-2">Pay cash or scan UPI QR-code directly to delivery rider at your doorstep.</span>
                 </button>
 
-                {/* 2. Wallet Balance */}
+                {/* 2. UPI Instant Pay */}
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('WALLET')}
+                  onClick={() => setPaymentMethod('UPI')}
                   className={`p-3 rounded-2xl text-left border flex flex-col gap-1 cursor-pointer transition ${
-                    paymentMethod === 'WALLET'
-                      ? 'border-emerald-600 bg-emerald-50/30 text-slate-800'
-                      : 'border-slate-100 hover:bg-slate-50'
+                    paymentMethod === 'UPI'
+                      ? 'border-emerald-600 bg-emerald-50/30 text-slate-850'
+                      : 'border-slate-100 hover:bg-slate-50 text-slate-700'
                   }`}
                 >
                   <div className="flex justify-between items-center w-full">
-                    <span className="font-extrabold text-xs">Direct Wallet Wallet</span>
-                    <span className={`text-[8px] font-mono font-bold rounded px-1 py-0.5 ${paymentMethod === 'WALLET' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700'}`}>
-                      ₹{walletBalance}
-                    </span>
+                    <span className="font-extrabold text-xs text-slate-850">UPI Instant Pay</span>
+                    <span className="text-[8px] tracking-wide bg-emerald-600 text-white font-black px-1 rounded uppercase">UPI</span>
                   </div>
-                  <span className="text-[9px] text-slate-400 line-clamp-2">Instant deduct billing from SwiftCart internal wallet vault.</span>
+                  <span className="text-[9px] text-slate-400 line-clamp-2">Instant payment redirect using Google Pay, PhonePe, Paytm, or BHIM.</span>
                 </button>
 
-                {/* 3. Razorpay mock portal */}
+                {/* 3. Credit Card */}
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('RAZORPAY')}
-                  className={`p-3 rounded-2xl bg-gradient-to-r text-left border flex flex-col gap-1 cursor-pointer transition ${
-                    paymentMethod === 'RAZORPAY'
-                      ? 'border-blue-600 bg-blue-50/40 text-slate-900'
-                      : 'border-slate-100 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex justify-between items-center w-full">
-                    <span className="font-extrabold text-xs text-slate-800">Razorpay Checkout</span>
-                    <span className="text-[8px] tracking-wide bg-blue-600 text-white font-black px-1.5 rounded uppercase">POPUP</span>
-                  </div>
-                  <span className="text-[9px] text-slate-400 line-clamp-2">Pay via UPI QR-Code, NetBanking, Google Pay standard portals.</span>
-                </button>
-
-                {/* 4. Stripe Elements form */}
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('STRIPE')}
+                  onClick={() => setPaymentMethod('CREDIT_CARD')}
                   className={`p-3 rounded-2xl text-left border flex flex-col gap-1 cursor-pointer transition ${
-                    paymentMethod === 'STRIPE'
-                      ? 'border-indigo-600 bg-indigo-50/40 text-slate-900'
+                    paymentMethod === 'CREDIT_CARD'
+                      ? 'border-indigo-600 bg-indigo-50/30 text-slate-855 font-bold'
                       : 'border-slate-100 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex justify-between items-center w-full">
-                    <span className="font-extrabold text-xs text-slate-800">Stripe Card Core</span>
-                    <span className="text-[8px] tracking-wide bg-indigo-600 text-white font-black px-1.5 rounded uppercase">ELEMENTS</span>
+                    <span className="font-extrabold text-xs text-slate-800">Credit Card</span>
+                    <span className="text-[8px] tracking-wide bg-indigo-600 text-white font-black px-1 rounded uppercase">CC</span>
                   </div>
-                  <span className="text-[9px] text-slate-400 line-clamp-2">Sleek card inputs, international credit / debit, 3D verification.</span>
+                  <span className="text-[9px] text-slate-400 line-clamp-2">Secure transaction via Visa, Mastercard, AMEX with 3D Secure verification.</span>
+                </button>
+
+                {/* 4. Debit Card */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('DEBIT_CARD')}
+                  className={`p-3 rounded-2xl text-left border flex flex-col gap-1 cursor-pointer transition ${
+                    paymentMethod === 'DEBIT_CARD'
+                      ? 'border-indigo-600 bg-indigo-50/30 text-slate-855 font-bold'
+                      : 'border-slate-100 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex justify-between items-center w-full">
+                    <span className="font-extrabold text-xs text-slate-800">Debit Card</span>
+                    <span className="text-[8px] tracking-wide bg-indigo-600 text-white font-black px-1 rounded uppercase">DC</span>
+                  </div>
+                  <span className="text-[9px] text-slate-400 line-clamp-2">Use RuPay, Visa, Mastercard debit cards with bank authentication page.</span>
                 </button>
 
               </div>
 
-              {/* Wallet helper detailed section */}
-              {paymentMethod === 'WALLET' && (
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-150 space-y-3 text-xs animate-fade-in text-slate-700">
-                  <div className="flex justify-between items-center">
-                    <span className="font-black text-slate-600 flex items-center gap-1 text-[10px] uppercase">
-                      <Wallet className="w-4 h-4 text-emerald-600" /> SwiftCart Vault balance
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setWalletTopUpOpen(true)}
-                      className="text-[10px] bg-slate-900 hover:bg-slate-950 text-white font-black px-2.5 py-1 rounded-lg cursor-pointer"
-                    >
-                      + Add Money / Top-up
-                    </button>
+              {/* UPI ID Info panel */}
+              {paymentMethod === 'UPI' && (
+                <div className="p-4 bg-slate-50/60 rounded-2xl border border-slate-150 space-y-3 animate-fade-in text-slate-700">
+                  <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Enter UPI ID</span>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="e.g. mobileNo@ybl, yourname@okhdfcbank"
+                      value={upiId}
+                      onChange={(e) => setUpiId(e.target.value)}
+                      className="bg-white border text-slate-800 border-slate-205 px-3 py-2 text-xs rounded-xl flex-1 focus:ring-1 focus:ring-emerald-500 outline-none animate-none"
+                    />
                   </div>
-
-                  <div className="grid grid-cols-2 gap-4 pt-1.5">
-                    <div className="space-y-1 bg-white p-2.5 rounded-xl border">
-                      <span className="text-[9px] text-slate-400 uppercase font-black">Current Balance</span>
-                      <p className="text-sm font-black text-slate-850 font-mono">₹{walletBalance}</p>
-                    </div>
-                    <div className="space-y-1 bg-white p-2.5 rounded-xl border">
-                      <span className="text-[9px] text-slate-400 uppercase font-black">Required Order Total</span>
-                      <p className="text-sm font-black text-emerald-700 font-mono">₹{netTotal}</p>
-                    </div>
-                  </div>
-
-                  {walletBalance < netTotal ? (
-                    <p className="text-[10px] text-red-500 font-extrabold flex items-center gap-1 pt-1 leading-normal">
-                      <AlertCircle className="w-3.5 h-3.5" /> Insufficient wallet balance! Please add ₹{netTotal - walletBalance} or switch to COD payment.
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-emerald-600 font-extrabold flex items-center gap-1 pt-1">
-                      <Check className="w-3.5 h-3.5" /> Funds verified. Order bill will be processed instantly from balance.
-                    </p>
-                  )}
+                  <p className="text-[9.5px] text-slate-400 leading-normal">
+                    You will receive a payment request on your preferred UPI app. Just enter your UPI PIN there to approve the transaction. Common handles: @okaxis, @okhdfcbank, @paytm, @ybl
+                  </p>
                 </div>
               )}
 
               {/* Stripe elements card detail block panel */}
-              {paymentMethod === 'STRIPE' && (
+              {(paymentMethod === 'CREDIT_CARD' || paymentMethod === 'DEBIT_CARD') && (
                 <div className="p-4 bg-slate-50/60 rounded-2xl border border-slate-150 space-y-4 animate-fade-in text-slate-700">
                   <div className="flex justify-between items-center">
                     <h4 className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1">
-                      <Lock className="w-3.5 h-3.5 text-indigo-600" /> Stripe Elements Secure Transaction
+                      <Lock className="w-3.5 h-3.5 text-indigo-600" /> Secure Card Transaction
                     </h4>
                     <span className="text-[8px] bg-slate-100 uppercase border font-bold px-1 rounded text-slate-500">PCIDSS Compliant</span>
                   </div>
@@ -869,7 +908,7 @@ export default function CheckoutPage({
                         <div className="flex justify-between items-start">
                           <div>
                             <span className="text-[8px] text-slate-400 uppercase font-bold block">SwiftCart Premium Card</span>
-                            <span className="text-xs font-black tracking-widest text-emerald-400">STRIPE pay</span>
+                            <span className="text-xs font-black tracking-widest text-emerald-400">{paymentMethod.replace('_', ' ')}</span>
                           </div>
                           
                           {/* Gold holographic microchip chip */}
@@ -884,7 +923,7 @@ export default function CheckoutPage({
                         <div className="flex justify-between text-left text-[9px] text-slate-400">
                           <div>
                             <span className="block text-[7px] text-slate-500 uppercase">Card Holder Name</span>
-                            <span className="font-bold text-slate-200 uppercase truncate max-w-[150px] inline-block">{cardHolder || 'Your Name Name'}</span>
+                            <span className="font-bold text-slate-200 uppercase truncate max-w-[150px] inline-block">{cardHolder || 'Your Name'}</span>
                           </div>
                           <div className="text-right">
                             <span className="block text-[7px] text-slate-500 uppercase">Expires End</span>
@@ -906,7 +945,7 @@ export default function CheckoutPage({
                         </div>
 
                         <div className="p-3 text-[8px] text-slate-500 text-center font-mono">
-                          Simulated Stripe Card Elements node. Flip back.
+                          Simulated Card Elements node. Flip back.
                         </div>
                       </div>
 
@@ -924,7 +963,7 @@ export default function CheckoutPage({
                           value={cardHolder}
                           onChange={(e) => setCardHolder(e.target.value)}
                           className="w-full bg-white px-3 py-2 border border-slate-250 text-xs rounded-xl focus:ring-1 focus:ring-emerald-500 outline-none"
-                          required={paymentMethod === 'STRIPE'}
+                          required={paymentMethod === 'CREDIT_CARD' || paymentMethod === 'DEBIT_CARD'}
                         />
                       </div>
                       
@@ -938,7 +977,7 @@ export default function CheckoutPage({
                           onFocus={() => setIsCardFlipped(false)}
                           className="w-full bg-white px-3 py-2 border border-slate-250 text-xs rounded-xl focus:ring-1 focus:ring-emerald-500 outline-none font-mono tracking-wider"
                           maxLength={19}
-                          required={paymentMethod === 'STRIPE'}
+                          required={paymentMethod === 'CREDIT_CARD' || paymentMethod === 'DEBIT_CARD'}
                         />
                       </div>
                     </div>
@@ -954,7 +993,7 @@ export default function CheckoutPage({
                           onFocus={() => setIsCardFlipped(false)}
                           className="w-full bg-white px-3 py-1.5 border border-slate-250 text-xs rounded-xl focus:ring-1 focus:ring-emerald-500 outline-none font-mono text-center"
                           maxLength={5}
-                          required={paymentMethod === 'STRIPE'}
+                          required={paymentMethod === 'CREDIT_CARD' || paymentMethod === 'DEBIT_CARD'}
                         />
                       </div>
 
@@ -969,7 +1008,7 @@ export default function CheckoutPage({
                           onBlur={() => setIsCardFlipped(false)}
                           className="w-full bg-white px-3 py-1.5 border border-slate-250 text-xs rounded-xl focus:ring-1 focus:ring-emerald-500 outline-none font-mono text-center"
                           maxLength={3}
-                          required={paymentMethod === 'STRIPE'}
+                          required={paymentMethod === 'CREDIT_CARD' || paymentMethod === 'DEBIT_CARD'}
                         />
                       </div>
 
@@ -982,31 +1021,8 @@ export default function CheckoutPage({
                           onChange={(e) => setCardZip(e.target.value.replace(/\D/g, '').substring(0, 6))}
                           className="w-full bg-white px-3 py-1.5 border border-slate-250 text-xs rounded-xl focus:ring-1 focus:ring-emerald-500 outline-none font-mono text-center"
                           maxLength={6}
-                          required={paymentMethod === 'STRIPE'}
+                          required={paymentMethod === 'CREDIT_CARD' || paymentMethod === 'DEBIT_CARD'}
                         />
-                      </div>
-                    </div>
-
-                    {/* Simulation switches */}
-                    <div className="bg-slate-100 p-2.5 rounded-xl border space-y-1.5 text-[10px] text-slate-500">
-                      <div className="flex justify-between items-center">
-                        <span className="font-extrabold text-indigo-700 uppercase">Mock Gateway Simulation:</span>
-                        <div className="flex gap-2 font-black">
-                          <button
-                            type="button"
-                            onClick={() => setStripeSuccessSimulate(true)}
-                            className={`px-2 py-0.5 rounded text-[9px] uppercase border ${stripeSuccessSimulate ? 'bg-indigo-600 text-white' : 'bg-white'}`}
-                          >
-                            Simulate Success
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setStripeSuccessSimulate(false)}
-                            className={`px-2 py-0.5 rounded text-[9px] uppercase border ${!stripeSuccessSimulate ? 'bg-red-600 text-white' : 'bg-white'}`}
-                          >
-                            Simulate Decline
-                          </button>
-                        </div>
                       </div>
                     </div>
 
@@ -1025,31 +1041,68 @@ export default function CheckoutPage({
                   </div>
 
                   <p className="text-[11px] leading-normal text-slate-500">
-                    Choosing Razorpay allows you to test checkout via netbanking, simulated GPay portals, or scanning a live digital static QR Code.
+                    Choosing Razorpay allows you to pay securely via netbanking options or scanning standard QR codes.
                   </p>
-
-                  <div className="bg-slate-100 p-2.5 rounded-xl border flex justify-between items-center text-[10px] text-slate-500">
-                    <span className="font-extrabold text-blue-700 uppercase">Razorpay portal result:</span>
-                    <div className="flex gap-1.5 font-black">
-                      <button
-                        type="button"
-                        onClick={() => setRazorpaySuccessSimulate(true)}
-                        className={`px-2 py-0.5 rounded text-[9.5px] border ${razorpaySuccessSimulate ? 'bg-blue-600 text-white' : 'bg-white'}`}
-                      >
-                        Succeed Pay
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRazorpaySuccessSimulate(false)}
-                        className={`px-2 py-0.5 rounded text-[9.5px] border ${!razorpaySuccessSimulate ? 'bg-red-600 text-white' : 'bg-white'}`}
-                      >
-                        Decline Pay
-                      </button>
-                    </div>
-                  </div>
                 </div>
               )}
 
+            </div>
+
+            {/* Step 3.5: Add Delivery Partner Tip */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-xs space-y-3.5">
+              <div className="flex items-center justify-between border-b border-slate-50 pb-2">
+                <div className="flex items-center gap-2 text-slate-800 font-bold">
+                  <span className="text-sm">💝</span>
+                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-wide">3.5 Add Delivery Partner Tip</h3>
+                </div>
+                {deliveryTip > 0 && (
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setDeliveryTip(0);
+                      triggerNotification("Tip Removed 💝", "Delivery partner tip was reset to zero.", "info");
+                    }}
+                    className="text-[9px] font-black uppercase text-rose-500 hover:text-rose-600 tracking-wider hover:underline cursor-pointer"
+                  >
+                    Reset Tip
+                  </button>
+                )}
+              </div>
+
+              <p className="text-[10.5px] text-slate-400 font-medium leading-relaxed">
+                100% of your generous tip goes directly to your e-bike delivery partner to appreciate their lightning-fast efforts.
+              </p>
+
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { value: 0, label: 'No Tip' },
+                  { value: 10, label: '₹10', desc: '☕ chai break' },
+                  { value: 20, label: '₹20', desc: '🍪 small treat' },
+                  { value: 50, label: '₹50', desc: '🚀 rider power' }
+                ].map((preset) => {
+                  const isSelected = deliveryTip === preset.value;
+                  return (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      onClick={() => {
+                        setDeliveryTip(preset.value);
+                        if (preset.value > 0) {
+                          triggerNotification("Tip Added! 💝", `Thank you! Added a ₹${preset.value} tip for your delivery partner.`, "success");
+                        }
+                      }}
+                      className={`p-2 py-2.5 rounded-2xl text-center border transition active:scale-95 duration-150 cursor-pointer flex flex-col justify-center items-center ${
+                        isSelected 
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-800 font-black ring-2 ring-emerald-500/10' 
+                          : 'border-slate-100 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-700 font-bold'
+                      }`}
+                    >
+                      <span className="text-xs font-extrabold">{preset.label}</span>
+                      {preset.desc && <span className="text-[7.5px] mt-0.5 font-normal opacity-75">{preset.desc}</span>}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Step 4: Invoice Summary Box */}
@@ -1059,7 +1112,7 @@ export default function CheckoutPage({
                 <h3 className="text-xs font-black text-slate-700 uppercase tracking-wide">4. Review Bill Invoice Summaries</h3>
               </div>
 
-              <div className="space-y-2 text-xs">
+               <div className="space-y-2 text-xs">
                 <div className="flex justify-between text-slate-500">
                   <span>Basket Items Subtotal:</span>
                   <span className="font-bold text-slate-800 font-mono">₹{subtotal}</span>
@@ -1070,6 +1123,12 @@ export default function CheckoutPage({
                     {deliveryFee === 0 || appliedCoupon === 'VIPDELIVERY' ? 'FREE' : `₹${deliveryFee}`}
                   </span>
                 </div>
+                {deliveryTip > 0 && (
+                  <div className="flex justify-between text-emerald-700 font-bold bg-emerald-50 px-2 py-1.5 rounded-xl border border-emerald-100/50">
+                    <span className="flex items-center gap-1">Rider Delivery Tip 💝:</span>
+                    <span className="font-mono">₹{deliveryTip}</span>
+                  </div>
+                )}
                 {finalDiscount > 0 && (
                   <div className="flex justify-between text-emerald-600 font-extrabold bg-emerald-50 p-2 rounded-xl border border-emerald-100">
                     <span>Total Coupon & Rewards Discount:</span>
@@ -1094,7 +1153,7 @@ export default function CheckoutPage({
               <button
                 type="submit"
                 disabled={isSubmittingOrder}
-                className="w-full mt-2 bg-emerald-650 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-black py-3 px-6 rounded-2xl shadow-md transition transform active:scale-95 duration-100 cursor-pointer flex justify-between items-center text-xs"
+                className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-black py-3 px-6 rounded-2xl shadow-md transition transform active:scale-95 duration-100 cursor-pointer flex justify-between items-center text-xs"
               >
                 <span>
                   {isSubmittingOrder ? 'TRANSACTING SECURE PAYMENTS...' : `CONFIRM & DEPOSIT ₹${netTotal} PAY`}
@@ -1107,167 +1166,7 @@ export default function CheckoutPage({
         </div>
       )}
 
-      {/* 3. RAZORPAY SECURE MODAL OVERLAY (No unrequested features - directly implements the Razorpay required scope!) */}
-      {showRazorpayModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-[#1a2138] text-white rounded-3xl w-full max-w-md shadow-2xl relative text-left border border-slate-700 overflow-hidden">
-            
-            {/* Header */}
-            <div className="bg-[#121727] p-4 px-5 border-b border-slate-800 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <span className="text-blue-500 font-extrabold text-base tracking-tighter">Razorpay</span>
-                <span className="text-[9px] border bg-slate-800 text-slate-350 px-1 font-bold rounded">SECURE</span>
-              </div>
-              <button 
-                onClick={() => setShowRazorpayModal(false)}
-                className="text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Inner Dashboard Body */}
-            <div className="p-5 space-y-4">
-              
-              {/* Product value banner */}
-              <div className="bg-slate-850/50 rounded-2xl p-3 px-4 border border-slate-800/80 flex justify-between items-center text-xs">
-                <div>
-                  <span className="text-slate-400 text-[10px] block">SwiftCart Supermarket Purchase</span>
-                  <span className="font-extrabold text-slate-300">Order Bill Settlement</span>
-                </div>
-                <div className="font-black text-sm text-blue-400 font-mono">₹{netTotal}</div>
-              </div>
-
-              {/* Sub-modes Select tabs */}
-              <div className="grid grid-cols-3 gap-2 text-[11px] font-extrabold uppercase select-none">
-                <button
-                  type="button"
-                  onClick={() => setRazorpayMethod('UPI')}
-                  className={`py-2 px-1 text-center rounded-xl border transition ${razorpayMethod === 'UPI' ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-slate-800 text-slate-400 hover:bg-slate-850'}`}
-                >
-                  BHIM / UPI
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRazorpayMethod('CARD')}
-                  className={`py-2 px-1 text-center rounded-xl border transition ${razorpayMethod === 'CARD' ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-slate-800 text-slate-400 hover:bg-slate-850'}`}
-                >
-                  Cards (Mock)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRazorpayMethod('NET_BANKING')}
-                  className={`py-2 px-1 text-center rounded-xl border transition ${razorpayMethod === 'NET_BANKING' ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-slate-800 text-slate-400 hover:bg-slate-850'}`}
-                >
-                  NetBanking
-                </button>
-              </div>
-
-              {/* Dynamic UI content */}
-              {razorpayMethod === 'UPI' && (
-                <div className="space-y-3 p-3.5 bg-slate-900 border border-slate-800 rounded-2xl text-center">
-                  <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest block mb-1">UPI QR Code scanner</span>
-                  
-                  {/* Generated simulated scan QR code */}
-                  <div className="w-32 h-32 bg-white p-2.5 mx-auto rounded-lg shadow-md relative">
-                    <img 
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=upi://pay?pa=swiftcart@rpay%26pn=SwiftCartStore%26am=${netTotal}`} 
-                      alt="UPI QR Code" 
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-0.5 bg-red-500 animate-pulse"></div>
-                  </div>
-                  
-                  <p className="text-[10px] text-slate-400 leading-normal max-w-xs mx-auto">
-                    Scan with GPay, PayTM or PhonePe to test checkout instantly. Or type simulated UPI address below:
-                  </p>
-
-                  <div className="flex gap-2 text-xs">
-                    <input
-                      type="text"
-                      value={upiId}
-                      onChange={(e) => setUpiId(e.target.value)}
-                      placeholder="e.g. resident@ybl"
-                      className="bg-slate-800 border border-slate-700 text-white rounded-xl px-2.5 py-1.5 flex-grow text-xs font-mono outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setUpiId('demo@bhim')}
-                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[9px] font-extrabold uppercase"
-                    >
-                      Use Demo ID
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {razorpayMethod === 'CARD' && (
-                <div className="space-y-2 text-xs leading-normal text-slate-350 p-4 bg-slate-900 border border-slate-800 rounded-2xl">
-                  <p className="font-bold text-[10px] text-blue-400 uppercase tracking-wider">Fast Credit Visa Card simulation</p>
-                  <p className="text-[11px]">Razorpay uses custom card element modules on final checkout. To pay via cards directly, we highly recommend selecting the dedicated <span className="font-extrabold text-white">Stripe elements payment mode</span> which provides the complete interactive 3D digital cards flip mockup!</p>
-                </div>
-              )}
-
-              {razorpayMethod === 'NET_BANKING' && (
-                <div className="space-y-2 shrink-0 p-4 bg-slate-900 border border-slate-800 rounded-2xl text-xs">
-                  <div className="font-extrabold text-[10px] text-blue-300 uppercase block mb-1">Select Sandbox Bank Portal:</div>
-                  <div className="grid grid-cols-2 gap-2 text-[11px] font-semibold text-slate-300 text-left">
-                    <button type="button" className="p-2 bg-slate-850 hover:bg-slate-800 border border-slate-750 rounded-xl flex items-center justify-between">
-                      <span>State Bank of India</span>
-                      <span>🏦</span>
-                    </button>
-                    <button type="button" className="p-2 bg-slate-850 hover:bg-slate-800 border border-slate-750 rounded-xl flex items-center justify-between">
-                      <span>HDFC Bank Security</span>
-                      <span>🏦</span>
-                    </button>
-                    <button type="button" className="p-2 bg-slate-850 hover:bg-slate-800 border border-slate-750 rounded-xl flex items-center justify-between">
-                      <span>ICICI NetBanking</span>
-                      <span>🏦</span>
-                    </button>
-                    <button type="button" className="p-2 bg-slate-850 hover:bg-slate-800 border border-slate-750 rounded-xl flex items-center justify-between">
-                      <span>Axis Bank Retail</span>
-                      <span>🏦</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Simulation outcome switcher */}
-              <div className="border-t border-slate-800/80 pt-3 flex justify-between items-center text-[10px] text-slate-400">
-                <span>Outcome Scenario:</span>
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setRazorpaySuccessSimulate(true)}
-                    className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold tracking-wider ${razorpaySuccessSimulate ? 'bg-emerald-600 text-white' : 'bg-slate-800'}`}
-                  >
-                    Success
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRazorpaySuccessSimulate(false)}
-                    className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold tracking-wider ${!razorpaySuccessSimulate ? 'bg-red-650 text-white' : 'bg-slate-800'}`}
-                  >
-                    Decline Fail
-                  </button>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Pay Button panel */}
-            <div className="bg-[#121727] p-4 text-center border-t border-slate-800">
-              <button
-                onClick={handleRazorpayMockComplete}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 rounded-2xl text-xs uppercase cursor-pointer"
-              >
-                🔒 Confirm securely ₹{netTotal} bhim-rpay
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* 4. STRIPE 3D-SECURE SECURE CODING POPUP VERIFIER (Meets requested features criteria!) */}
       {showStripe3DS && (
@@ -1280,7 +1179,7 @@ export default function CheckoutPage({
               </div>
               <h3 className="font-extrabold text-sm text-slate-950 uppercase tracking-tight">Stripe 3D-Secure Authorization</h3>
               <p className="text-[11px] text-slate-500 leading-normal pr-4 pl-4">
-                Verify this purchase of <span className="font-bold text-slate-800">₹{netTotal}</span> at <span className="font-bold text-slate-800">SWIFTCART</span>. Type standard verification code:
+                Please enter the secure verification code sent to your registered mobile ending in ****.
               </p>
             </div>
 
@@ -1294,37 +1193,6 @@ export default function CheckoutPage({
                 onChange={(e) => setStripe3dsCode(e.target.value.replace(/\D/g, ''))}
                 className="w-40 text-center bg-slate-50 font-mono text-lg font-black py-2 rounded-xl border border-slate-250 focus:ring-1 focus:ring-indigo-500 outline-none select-all"
               />
-              
-              <div className="pt-1">
-                <button
-                  type="button"
-                  onClick={() => setStripe3dsCode('1234')}
-                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[9px] font-black uppercase px-2 py-1 rounded"
-                >
-                  Quick Fill Security PIN (1234)
-                </button>
-              </div>
-            </div>
-
-            {/* Outcome display toggle */}
-            <div className="bg-slate-50 p-2 border border-slate-100 rounded-xl flex justify-between items-center text-[9px] text-slate-400">
-              <span>Card verification:</span>
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setStripeSuccessSimulate(true)}
-                  className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${stripeSuccessSimulate ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}`}
-                >
-                  Mock success
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStripeSuccessSimulate(false)}
-                  className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${!stripeSuccessSimulate ? 'bg-red-650 text-white' : 'bg-white text-slate-600'}`}
-                >
-                  Mock failure
-                </button>
-              </div>
             </div>
 
             <button
@@ -1413,26 +1281,7 @@ export default function CheckoutPage({
               </div>
             </div>
 
-            {/* Top up outcome simulation option toggle */}
-            <div className="bg-slate-50 p-2 border border-slate-100 rounded-xl flex justify-between items-center text-[9px] text-slate-400">
-              <span>Simulation Result outcome:</span>
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setTopUpSimulateSuccess(true)}
-                  className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${topUpSimulateSuccess ? 'bg-emerald-600 text-white' : 'bg-white text-slate-600'}`}
-                >
-                  Succeed
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTopUpSimulateSuccess(false)}
-                  className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${!topUpSimulateSuccess ? 'bg-red-650 text-white' : 'bg-white text-slate-600'}`}
-                >
-                  Decline
-                </button>
-              </div>
-            </div>
+
 
             <button
               type="submit"

@@ -77,11 +77,16 @@ export interface Order {
   rejectionReason?: string;
   refundReason?: string;
   refundedAt?: string;
+  deliveredAt?: string;
   otp?: string;
+  deliveryInstructions?: string;
+  deliveryTip?: number;
+  deliveryStage?: 'pickup_nav' | 'delivery_nav' | 'otp_verify';
 }
 
 export interface SellerProfile {
   id: string;
+  userId?: string;
   storeName: string;
   ownerName: string;
   phone: string;
@@ -100,4 +105,70 @@ export interface RiderProfile {
   activeOrderId?: string;
   earnings: number;
   createdAt: string;
+  lat?: number;
+  lng?: number;
 }
+
+export interface OutboundNotification {
+  id: string;
+  orderId: string;
+  recipientRole: 'admin' | 'seller' | 'rider' | 'customer';
+  recipientName: string;
+  recipientPhone: string;
+  channel: 'sms' | 'whatsapp' | 'fcm' | 'pwa';
+  title?: string;
+  category?: 'promos' | 'orderStatuses' | 'systemAlerts';
+  message: string;
+  status: 'sent' | 'delivered' | 'opened' | 'failed';
+  isRead?: boolean;
+  createdAt: string;
+  sentAt?: string;
+  deliveredAt?: string;
+  openedAt?: string;
+  failedReason?: string;
+  retryCount?: number;
+  retryLogs?: string[];
+}
+
+export interface RestaurantCategory {
+  id: string;
+  name: string;
+  image?: string;
+  createdAt?: string;
+}
+
+export interface Restaurant {
+  id: string;
+  name: string;
+  categoryId: string; // references RestaurantCategory id
+  image?: string;
+  rating?: number;
+  deliveryMinutes?: number;
+  priceForTwo?: number;
+  address?: string;
+  phone?: string;
+  isActive?: boolean;
+  createdAt?: string;
+}
+
+export interface MenuCategory {
+  id: string;
+  restaurantId: string; // references Restaurant id
+  name: string;
+  createdAt?: string;
+}
+
+export interface RestaurantProduct {
+  id: string;
+  restaurantId: string;
+  menuCategoryId: string; // references MenuCategory id
+  name: string;
+  price: number;
+  description?: string;
+  image?: string;
+  isVeg?: boolean;
+  isAvailable?: boolean;
+  createdAt?: string;
+}
+
+

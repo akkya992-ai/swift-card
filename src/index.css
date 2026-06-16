@@ -82,6 +82,19 @@
   }
 }
 
+/* Hard location-not-set pulse for MapPin */
+#customer-app-root .lucide-MapPin.location-not-set {
+  background-color: rgba(239, 68, 68, 0.35);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+  border: 1px solid rgba(244, 63, 94, 0.5);
+  border-radius: 9999px;
+  padding: 6px;
+  width: 32px;
+  height: 32px;
+  box-sizing: border-box;
+  animation: bounce 1s infinite alternate, pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 /* Custom modern scrollbar stylings */
 ::-webkit-scrollbar {
   width: 6px;
@@ -99,4 +112,21 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* Responsive sizing for Leaflet map containers */
+.leaflet-container {
+  width: 100% !important;
+  height: 45vh !important;
+  min-height: 250px !important;
+  max-height: 400px !important;
+  max-width: 100% !important;
+  touch-action: none !important;
+}
+
+@media (min-width: 768px) {
+  .leaflet-container {
+    height: 380px !important;
+    max-height: none !important;
+  }
 }

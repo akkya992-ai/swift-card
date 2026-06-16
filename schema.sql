@@ -273,13 +273,14 @@ CREATE TRIGGER set_timestamp_coupons BEFORE UPDATE ON coupons FOR EACH ROW EXECU
 -- ==========================================
 
 -- This PL/pgSQL implementation guarantees database-level atomic inventory management.
--- On checkout, stock is checked & decremented. If stock is depleted, the transaction 
+-- On checkout, stock is checked and reserved. If stock is depleted, the transaction 
 -- automatically rolls back, completely safe-guarding against dual-order race conditions!
 
 CREATE OR REPLACE FUNCTION process_order_stock_reservation()
 RETURNS TRIGGER AS $$
 DECLARE
     current_available_stock INT;
+    parent_order_status VARCHAR(50);
 BEGIN
     -- Select the stock with an exclusive row lock to block competing concurrent checkouts on the same product
     SELECT stock - reserved_stock INTO current_available_stock
@@ -297,44 +298,96 @@ BEGIN
             NEW.product_name, NEW.quantity, current_available_stock;
     END IF;
 
-    -- Increment stock reservation
-    UPDATE inventory
-    SET stock = stock - NEW.quantity,
-        updated_at = NOW()
-    WHERE product_id = NEW.product_id;
+    -- Check if parent order is confirmed or placed
+    SELECT status::text INTO parent_order_status FROM orders WHERE id = NEW.order_id;
+
+    -- If parent order is placed, increment reserved_stock, otherwise deduct from stock immediately
+    IF parent_order_status = 'placed' THEN
+        UPDATE inventory
+        SET reserved_stock = reserved_stock + NEW.quantity,
+            updated_at = NOW()
+        WHERE product_id = NEW.product_id;
+    ELSE
+        UPDATE inventory
+        SET stock = stock - NEW.quantity,
+            updated_at = NOW()
+        WHERE product_id = NEW.product_id;
+    END IF;
 
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS transaction_stock_reservation ON order_items;
 CREATE TRIGGER transaction_stock_reservation
 BEFORE INSERT ON order_items
 FOR EACH ROW
 EXECUTE PROCEDURE process_order_stock_reservation();
 
 -- ==========================================
--- 6. ORDER REFUNDS / REVERSALS RESTOCK TRIGGER
+-- 6. ORDER CONFIRMATION DEDUCTION & CANCELLATION RESTOCK TRIGGER
 -- ==========================================
 
--- Automatically re-stocks items back into the inventory if an order gets cancelled.
--- Restores stock metrics instantly for resale.
-CREATE OR REPLACE FUNCTION process_order_cancellation_restock()
+-- Automatically deducts stock from inventory when order status transitions to 'confirmed'
+-- or handles cancellation/unreservation cleanly.
+CREATE OR REPLACE FUNCTION process_order_status_inventory_sync()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Check if order status shifted to cancelled
-    IF NEW.status = 'cancelled' AND OLD.status != 'cancelled' THEN
-        -- Safely restore stock quantities of all items corresponding to this order back to active inventory shelves
+    -- 1. Transiting from placed -> confirmed: finalize the deduction by actualizing stock and removing from reserved_stock
+    IF (NEW.status = 'confirmed' OR NEW.status = 'dispatched' OR NEW.status = 'delivered') AND (OLD.status = 'placed') THEN
+        UPDATE inventory i
+        SET stock = i.stock - oi.quantity,
+            reserved_stock = i.reserved_stock - oi.quantity,
+            updated_at = NOW()
+        FROM order_items oi
+        WHERE oi.order_id = NEW.id AND i.product_id = oi.product_id;
+    END IF;
+
+    -- 2. Transiting from placed -> cancelled: simply unreserve the stock
+    IF NEW.status = 'cancelled' AND OLD.status = 'placed' THEN
+        UPDATE inventory i
+        SET reserved_stock = i.reserved_stock - oi.quantity,
+            updated_at = NOW()
+        FROM order_items oi
+        WHERE oi.order_id = NEW.id AND i.product_id = oi.product_id;
+    END IF;
+
+    -- 3. Transiting from confirmed/dispatched -> cancelled: refund the actual stock back to shelf
+    IF NEW.status = 'cancelled' AND (OLD.status = 'confirmed' OR OLD.status = 'dispatched') THEN
         UPDATE inventory i
         SET stock = i.stock + oi.quantity,
             updated_at = NOW()
         FROM order_items oi
         WHERE oi.order_id = NEW.id AND i.product_id = oi.product_id;
     END IF;
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER order_cancellation_restock
+DROP TRIGGER IF EXISTS order_status_inventory_sync ON orders;
+DROP TRIGGER IF EXISTS order_cancellation_restock ON orders;
+CREATE TRIGGER order_status_inventory_sync
 AFTER UPDATE ON orders
 FOR EACH ROW
-EXECUTE PROCEDURE process_order_cancellation_restock();
+EXECUTE PROCEDURE process_order_status_inventory_sync();
+
+-- ==========================================
+-- 7. ALARM AUDIT & ALERT DIAGNOSTICS LOGS
+-- ==========================================
+
+CREATE TABLE alert_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_id VARCHAR(100) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    alert_sent_at TIMESTAMP WITH TIME ZONE,
+    alert_opened_at TIMESTAMP WITH TIME ZONE,
+    accepted_at TIMESTAMP WITH TIME ZONE,
+    rejected_at TIMESTAMP WITH TIME ZONE,
+    missed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT unique_order_role UNIQUE (order_id, role)
+);
+
+CREATE INDEX idx_alert_logs_order ON alert_logs(order_id);
+

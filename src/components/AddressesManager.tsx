@@ -175,7 +175,7 @@ export default function AddressesManager({
           <div className="space-y-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase">Complete Address details:</span>
             <textarea
-              placeholder="e.g. Unit 401, Tower C, DLF Epitome, Sector 24, Gurugram, Delhi NCR"
+              placeholder="e.g. H.No 5-2/12, Main Road, Mahabubabad, Telangana"
               value={newAddress}
               onChange={(e) => setNewAddress(e.target.value)}
               className="w-full bg-white px-2.5 py-1.5 border border-slate-250 rounded-lg text-xs h-16 focus:ring-1 focus:ring-emerald-500 outline-none"

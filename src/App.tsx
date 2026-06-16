@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, ShieldAlert, Sparkles, User, RefreshCw, Layout, Bike, Store, ShoppingBag } from 'lucide-react';
+import { LogOut, ShieldAlert, Sparkles, User, RefreshCw, Layout, Bike, Store, ShoppingBag, Bell, Volume2, X } from 'lucide-react';
 import { UserRole } from './types';
 import AuthPage from './components/AuthPage';
 import CustomerApp from './components/CustomerApp';
 import AdminDashboard from './components/AdminDashboard';
 import SellerDashboard from './components/SellerDashboard';
 import RiderDashboard from './components/RiderDashboard';
+import LegalPages from './components/LegalPages';
+import RoleSelector from './components/RoleSelector';
 
 export default function App() {
   // Authentication & session state
@@ -13,20 +15,395 @@ export default function App() {
   const [selectedRole, setSelectedRole] = useState<UserRole>('customer');
   const [userProfile, setUserProfile] = useState<any>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
   
   // Loading & status flags
   const [sessionLoading, setSessionLoading] = useState(true);
   const [statusMsg, setStatusMsg] = useState('');
   const [splashLoading, setSplashLoading] = useState(true);
 
+  // Admin secure verification layer states
+  const [isAdminPasswordVerified, setIsAdminPasswordVerified] = useState(() => {
+    return sessionStorage.getItem('is_admin_verified') === 'true';
+  });
+  const [showAdminVerifyModal, setShowAdminVerifyModal] = useState(false);
+  const [adminVerifyPasswordInput, setAdminVerifyPasswordInput] = useState('');
+  const [adminVerifyError, setAdminVerifyError] = useState('');
+  const [adminVerifyLoading, setAdminVerifyLoading] = useState(false);
+  const [pendingAdminSwitch, setPendingAdminSwitch] = useState<{
+    customToken?: string;
+    customProfile?: any;
+  } | null>(null);
+
+  // Global Alarm / Push Notifications States
+  const [notifPermission, setNotifPermission] = useState<string>(() => {
+    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default';
+  });
+  const [showNotifBanner, setShowNotifBanner] = useState<boolean>(() => {
+    return localStorage.getItem('dismiss_notif_banner') !== 'true';
+  });
+  const [lastCheckedSeenIds, setLastCheckedSeenIds] = useState<Record<string, string[]>>({
+    rider: [],
+    seller: [],
+    admin: []
+  });
+
+  // Background and Closed App alarm trigger states
+  const [isSWMiniAlarmActive, setIsSWMiniAlarmActive] = useState(false);
+  const [swMiniAlarmRole, setSWMiniAlarmRole] = useState('rider');
+  const [swMiniAlarmOrderId, setSWMiniAlarmOrderId] = useState('SC-120935');
+
+  // Trigger helper to register and audit background SLA response alarms
+  const logAlertEvent = (orderId: string, role: string, eventType: string) => {
+    fetch('/api/notifications/log-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderId,
+        role,
+        eventType
+      })
+    }).catch(err => console.warn('PWA Alert event log failed:', err));
+  };
+
+  // Automated trigger detecting when the alert is displayed on screen (alert_opened_at)
+  useEffect(() => {
+    if (isSWMiniAlarmActive && swMiniAlarmOrderId && swMiniAlarmRole) {
+      logAlertEvent(swMiniAlarmOrderId, swMiniAlarmRole, 'opened');
+    }
+  }, [isSWMiniAlarmActive, swMiniAlarmOrderId, swMiniAlarmRole]);
+
+  // Service worker background-to-foreground communication listeners
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if ('serviceWorker' in navigator) {
+      const handleSwMessage = (event: MessageEvent) => {
+        if (event.data && event.data.type === 'TRIGGER_EMERGENCYS_SIREN') {
+          console.log('[App] SW TRIGGER_EMERGENCYS_SIREN message received!');
+          setIsSWMiniAlarmActive(true);
+          setSWMiniAlarmRole(event.data.role || 'rider');
+          if (event.data.orderId) {
+            setSWMiniAlarmOrderId(event.data.orderId);
+          }
+        }
+      };
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+      return () => {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      };
+    }
+  }, []);
+
+  // Hash-based check on application mount / hash change (when URL launches from SW click)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const checkHash = () => {
+      if (window.location.hash.includes('alarm-trigger=true')) {
+        const urlParams = new URLSearchParams(window.location.hash.substring(1));
+        const role = urlParams.get('role') || 'rider';
+        setIsSWMiniAlarmActive(true);
+        setSWMiniAlarmRole(role);
+        // Clear hash so reloads don't persist it
+        window.location.hash = '';
+      }
+    };
+    
+    checkHash();
+    window.addEventListener('hashchange', checkHash);
+    return () => window.removeEventListener('hashchange', checkHash);
+  }, []);
+
+  // Synchronized persistent dual-frequency Audio Alarm generator for continuous active mode ring
+  useEffect(() => {
+    if (!isSWMiniAlarmActive) return;
+
+    const playHighVolumeBuzzer = () => {
+      try {
+        const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtxClass) return;
+        const ctx = new AudioCtxClass();
+        const now = ctx.currentTime;
+
+        // Custom Sawtooth rapid alarm oscillations
+        const playTone = (frequency: number, delay: number, length: number) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(frequency, now + delay);
+          gain.gain.setValueAtTime(0.3, now + delay);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + delay + length);
+          
+          osc.start(now + delay);
+          osc.stop(now + delay + length);
+        };
+
+        // Dual sirens sounding simultaneously to penetrate sleep
+        playTone(1100, 0, 0.35);
+        playTone(900, 0.4, 0.35);
+      } catch (err) {
+        console.warn('AudioContext alert failed:', err);
+      }
+    };
+
+    playHighVolumeBuzzer();
+    const intervalAlert = setInterval(playHighVolumeBuzzer, 1100);
+
+    return () => clearInterval(intervalAlert);
+  }, [isSWMiniAlarmActive]);
+
+  // Background poller for 24/7 dispatcher alerts
+  useEffect(() => {
+    if (!isAuthenticated || !userProfile || selectedRole !== 'rider') return;
+
+    const alarmSoundUrls: Record<string, string> = {
+      chirp: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-84.wav',
+      beeping: 'https://assets.mixkit.co/active_storage/sfx/911/911-84.wav',
+      bell: 'https://assets.mixkit.co/active_storage/sfx/2019/2019-84.wav',
+      synth: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-84.wav',
+    };
+
+    const playGlobalAudioAlarm = (style = 'chirp', vol = 0.6) => {
+      try {
+        const url = alarmSoundUrls[style] || alarmSoundUrls.chirp;
+        const audio = new Audio(url);
+        audio.volume = vol;
+        audio.play().catch(() => {});
+      } catch (e) {
+        console.warn('Audio play block:', e);
+      }
+    };
+
+    const triggerWebNotification = (title: string, body: string) => {
+      try {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(title, {
+            body,
+            icon: '/favicon.ico'
+          });
+        }
+      } catch (err) {
+        console.warn('Background notification error:', err);
+      }
+    };
+
+    // Pre-populate already existing orders once to avoid historic sirens
+    const seedActiveIds = async () => {
+      try {
+        const res = await fetch('/api/orders');
+        if (res.ok) {
+          const orders = await res.json();
+          setLastCheckedSeenIds(prev => {
+            const initialRider = orders
+              .filter((o: any) => (o.status === 'confirmed' || (o.status === 'placed' && o.packingStatus === 'ready')) && !o.riderId)
+              .map((o: any) => o.id);
+
+            return {
+              rider: initialRider,
+              seller: prev.seller,
+              admin: prev.admin
+            };
+          });
+        }
+      } catch (e) {
+        console.warn('Could not populate background alert items:', e);
+      }
+    };
+
+    seedActiveIds();
+
+    const checkBackgroundAlarms = async () => {
+      try {
+        const res = await fetch('/api/orders');
+        if (!res.ok) return;
+        const orders: any[] = await res.json();
+
+        setLastCheckedSeenIds(prev => {
+          let updatedRider = [...prev.rider];
+          let playSound = false;
+          let sStyle = 'chirp';
+          let sVol = 0.6;
+          let notifTitle = '';
+          let notifBody = '';
+
+          // 1. Rider Job Siren check (runs if logged in user is a rider OR in rider mode workspace)
+          const unassignedJobs = orders.filter(o => 
+            (o.status === 'confirmed' || (o.status === 'placed' && o.packingStatus === 'ready')) && 
+            !o.riderId
+          );
+          const freshJob = unassignedJobs.find(o => !updatedRider.includes(o.id));
+          if (freshJob) {
+            updatedRider.push(freshJob.id);
+            playSound = true;
+
+            // Read user-defined custom alarm rings
+            const savedEnabled = localStorage.getItem('rider_alarm_enabled') !== 'false';
+            if (savedEnabled) {
+              sStyle = localStorage.getItem('rider_alarm_sound') || 'chirp';
+              const savedVol = localStorage.getItem('rider_alarm_volume');
+              sVol = savedVol ? parseFloat(savedVol) : 0.6;
+            } else {
+              playSound = false;
+            }
+
+            notifTitle = '🛵 New Delivery Offer!';
+            notifBody = `A dispatch ticket worth ₹50 is ready at ${freshJob.items[0]?.product?.sellerName || 'dark store base'}. Open SwiftCart to accept order #${freshJob.id}!`;
+          }
+
+          if (playSound) {
+            playGlobalAudioAlarm(sStyle, sVol);
+            triggerWebNotification(notifTitle, notifBody);
+          }
+
+          return {
+            rider: updatedRider,
+            seller: prev.seller,
+            admin: prev.admin
+          };
+        });
+
+      } catch (err) {
+        console.warn('Error inside background monitoring alarm thread:', err);
+      }
+    };
+
+    const threadInterval = setInterval(checkBackgroundAlarms, 4500);
+    return () => clearInterval(threadInterval);
+
+  }, [isAuthenticated, userProfile?.id, userProfile?.role, selectedRole]);
+
+  const handleRequestNotifPermission = () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        setNotifPermission(permission);
+        if (permission === 'granted') {
+          try {
+            const bellObj = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-84.wav');
+            bellObj.volume = 0.55;
+            bellObj.play().catch(() => {});
+          } catch(e) {}
+          
+          new Notification("🔔 Alarms Activated", {
+            body: "SwiftCart dispatch ringtones are now configured in your browser. Alarms will sound instantly!",
+            icon: '/favicon.ico'
+          });
+        }
+      });
+    }
+  };
+
+  const handleDismissNotifBanner = () => {
+    setShowNotifBanner(false);
+    localStorage.setItem('dismiss_notif_banner', 'true');
+  };
+
   useEffect(() => {
     tryRecoverySession();
+    
+    const handleLocationChange = () => {
+      const path = window.location.pathname;
+      setCurrentPath(path);
+      
+      // Auto adjust selected view based on active path
+      if (path === '/admin') setSelectedRole('admin');
+      else if (path === '/seller') setSelectedRole('seller');
+      else if (path === '/rider') setSelectedRole('rider');
+      else setSelectedRole('customer');
+    };
+    
+    window.addEventListener('popstate', handleLocationChange);
+
     // Guarantee minimum splash screen showtime for clean branding transition
     const timer = setTimeout(() => {
       setSplashLoading(false);
     }, 1800);
-    return () => clearTimeout(timer);
+    
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      clearTimeout(timer);
+    };
   }, []);
+
+  // Secure path and role protection guard
+  useEffect(() => {
+    if (isAuthenticated && userProfile) {
+      if (currentPath === '/admin') {
+        if (userProfile.role !== 'admin') {
+          // Show the verification modal. If they fail or cancel, they get redirected to customer home.
+          setShowAdminVerifyModal(true);
+        } else {
+          const isVerified = sessionStorage.getItem('is_admin_verified') === 'true';
+          if (!isVerified) {
+            setShowAdminVerifyModal(true);
+          }
+        }
+      }
+    }
+  }, [currentPath, isAuthenticated, userProfile, isAdminPasswordVerified]);
+
+  const navigateRole = (role: UserRole) => {
+    setSelectedRole(role);
+    const path = role === 'customer' ? '/' : `/${role}`;
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+      setCurrentPath(path);
+    }
+  };
+
+  const handleVerifyAdminPassword = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!adminVerifyPasswordInput) {
+      setAdminVerifyError('Password is required');
+      return;
+    }
+
+    setAdminVerifyLoading(true);
+    setAdminVerifyError('');
+
+    try {
+      const savedToken = pendingAdminSwitch?.customToken || localStorage.getItem('swiftcart_jwt_token');
+      const res = await fetch('/api/auth/verify-admin-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${savedToken}`
+        },
+        body: JSON.stringify({ password: adminVerifyPasswordInput })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIsAdminPasswordVerified(true);
+        sessionStorage.setItem('is_admin_verified', 'true');
+        setShowAdminVerifyModal(false);
+        setAdminVerifyPasswordInput('');
+        
+        if (data.token && data.profile) {
+          localStorage.setItem('swiftcart_jwt_token', data.token);
+          setToken(data.token);
+          setUserProfile(data.profile);
+          setIsAuthenticated(true);
+        } else if (pendingAdminSwitch?.customToken && pendingAdminSwitch?.customProfile) {
+          localStorage.setItem('swiftcart_jwt_token', pendingAdminSwitch.customToken);
+          setToken(pendingAdminSwitch.customToken);
+          setUserProfile(pendingAdminSwitch.customProfile);
+          setIsAuthenticated(true);
+        }
+        setPendingAdminSwitch(null);
+        navigateRole('admin');
+      } else {
+        setAdminVerifyError(data.error || 'Incorrect admin password');
+      }
+    } catch (err: any) {
+      setAdminVerifyError('Connection failed. Please try again.');
+    } finally {
+      setAdminVerifyLoading(false);
+    }
+  };
 
   const tryRecoverySession = async () => {
     const savedToken = localStorage.getItem('swiftcart_jwt_token');
@@ -47,7 +424,52 @@ export default function App() {
       const data = await res.json();
       if (res.ok && data.success) {
         setToken(savedToken);
-        setSelectedRole(data.role);
+        
+        // Sync role based on path on load
+        const pathname = window.location.pathname;
+        const actualRole = data.role;
+        let roleToSet = 'customer';
+
+        if (pathname === '/admin') {
+          if (actualRole === 'admin') {
+            roleToSet = 'admin';
+          } else {
+            roleToSet = 'customer';
+            window.history.replaceState({}, '', '/');
+            setCurrentPath('/');
+          }
+        }
+        else if (pathname === '/seller') {
+          if (actualRole === 'seller') {
+            roleToSet = 'seller';
+          } else {
+            roleToSet = 'customer';
+            window.history.replaceState({}, '', '/');
+            setCurrentPath('/');
+          }
+        }
+        else if (pathname === '/rider') {
+          if (actualRole === 'rider') {
+            roleToSet = 'rider';
+          } else {
+            roleToSet = 'customer';
+            window.history.replaceState({}, '', '/');
+            setCurrentPath('/');
+          }
+        }
+        else if (pathname === '/' || pathname === '') {
+          roleToSet = actualRole;
+          if (actualRole !== 'customer' && actualRole !== 'admin') {
+            window.history.replaceState({}, '', `/${actualRole}`);
+            setCurrentPath(`/${actualRole}`);
+          }
+        } else {
+          roleToSet = 'customer';
+          window.history.replaceState({}, '', '/');
+          setCurrentPath('/');
+        }
+
+        setSelectedRole(roleToSet as UserRole);
         setUserProfile(data.profile);
         setIsAuthenticated(true);
         console.log('[SESSION ENGINE] Recovered JWT for active user: ', data.profile.email);
@@ -63,17 +485,45 @@ export default function App() {
 
   const handleLoginSuccess = (phone: string, role: UserRole, profile: any) => {
     setUserProfile(profile);
-    setSelectedRole(role);
+    setToken(localStorage.getItem('swiftcart_jwt_token'));
     setIsAuthenticated(true);
+    
+    // Auto route to their corresponding authorized database role
+    let actualRole = profile?.role || role;
+    const cleanPhone = String(phone || '').replace(/\D/g, '');
+    if (cleanPhone === '7032865951' || cleanPhone === '7032865110' || (profile && (profile.phone === '7032865951' || profile.phone === '7032865110'))) {
+      actualRole = 'admin';
+    }
+    navigateRole(actualRole);
   };
 
   const handleLogout = () => {
     localStorage.removeItem('swiftcart_jwt_token');
+    sessionStorage.removeItem('is_admin_verified');
+    setIsAdminPasswordVerified(false);
     setUserProfile(null);
     setToken(null);
     setIsAuthenticated(false);
     setStatusMsg('Session logged out successfully.');
+    setSelectedRole('customer');
+    
+    window.history.pushState({}, '', '/');
+    setCurrentPath('/');
+    
     setTimeout(() => setStatusMsg(''), 4000);
+  };
+
+  const handleAdminLoginRedirect = () => {
+    localStorage.removeItem('swiftcart_jwt_token');
+    sessionStorage.removeItem('is_admin_verified');
+    setToken(null);
+    setUserProfile(null);
+    setIsAuthenticated(false);
+    setIsAdminPasswordVerified(false);
+    setSelectedRole('admin');
+    
+    window.history.pushState({}, '', '/admin');
+    setCurrentPath('/admin');
   };
 
   const reloadUserProfile = async () => {
@@ -94,6 +544,20 @@ export default function App() {
       console.warn('Failed to refresh user profile:', e);
     }
   };
+
+  // Intercept publicly accessible legal pages
+  if (['/privacy', '/terms', '/refunds'].includes(currentPath)) {
+    const tabName = currentPath === '/privacy' ? 'privacy' : (currentPath === '/terms' ? 'terms' : 'refund');
+    return (
+      <LegalPages 
+        initialTab={tabName} 
+        onBack={() => {
+          window.history.pushState({}, '', '/');
+          setCurrentPath('/');
+        }} 
+      />
+    );
+  }
 
   if (sessionLoading || splashLoading) {
     return (
@@ -179,39 +643,127 @@ export default function App() {
     );
   }
 
-  // Authenticated Dashboard Layout
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col">
-      
-      {/* Dynamic Navigation Top Admin bar (Hidden inside primary mobile checkout layouts to preserve native Look and feel) */}
-      <nav className={`bg-slate-900 text-white py-3 px-6 shadow-md flex justify-between items-center ${selectedRole === 'customer' ? 'hidden md:flex' : 'flex'}`}>
-        <div className="flex items-center gap-2">
-          <div className="bg-emerald-500 text-slate-900 p-1.5 rounded-lg font-black text-xs">SC</div>
-          <span className="font-black text-sm tracking-tight">swift<span className="text-emerald-400">cart</span></span>
-          <span className="text-[10px] bg-slate-800 text-slate-400 font-bold px-2 py-0.5 rounded-full capitalize">
-            {selectedRole} Mode Workspace
-          </span>
-        </div>
+  // Guard manual path inputs
+  const isUnauthorized = 
+    (currentPath === '/admin' && userProfile?.role !== 'admin') ||
+    (currentPath === '/seller' && userProfile?.role !== 'seller') ||
+    (currentPath === '/rider' && userProfile?.role !== 'rider');
 
-        <div className="flex items-center gap-4 text-xs">
-          
-          <div className="items-center gap-1.5 hidden sm:flex">
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
-            <span className="text-slate-300 font-semibold truncate max-w-[170px]">
-              Profile: {userProfile?.name || userProfile?.email || 'Authenticated User'}
-            </span>
+  if (isUnauthorized) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center select-none relative">
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-rose-500/10 rounded-full blur-[80px]"></div>
+        
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 p-8 rounded-[32px] space-y-6 z-10 shadow-2xl relative">
+          <div className="w-16 h-16 bg-rose-500/10 text-rose-500 rounded-2xl flex items-center justify-center mx-auto text-3xl shadow-lg border border-rose-500/20 animate-pulse">
+            🔒
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 hover:text-rose-400 font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer border border-slate-750"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Switch Role / Logout</span>
-          </button>
+          <div className="space-y-2">
+            <h2 className="text-xl font-black text-white tracking-tight">Access Restricted</h2>
+            <p className="text-[10px] font-mono text-rose-405 uppercase tracking-widest font-black">
+              Role-Based Route Security Guard Active
+            </p>
+            <p className="text-xs text-slate-400 font-medium leading-relaxed">
+              Your authenticated profile role (<span className="text-yellow-400 font-black px-1.5 py-0.5 bg-slate-800 rounded">{userProfile?.role}</span>) does not have keys to clear this terminal's route path (<span className="text-slate-350 font-mono font-bold">{currentPath}</span>).
+            </p>
+          </div>
 
+          <div className="bg-slate-950/50 rounded-2xl p-4 border border-slate-850 text-left space-y-2.5 text-[11px] text-slate-400 leading-normal font-sans">
+            <p className="font-bold text-slate-300 flex items-center gap-1.5">
+              <span>🛡️</span> Security Telemetry:
+            </p>
+            <ul className="list-disc pl-4 space-y-1 text-slate-500 font-mono text-[9px]">
+              <li>Identity Ref: {userProfile?.email || 'N/A'}</li>
+              <li>Required Scope: Key of matching partner entity</li>
+              <li>Diagnostic Exception: JWT_ROLE_MISMATCH</li>
+            </ul>
+          </div>
+
+          <div className="flex flex-col gap-2.5">
+            <button
+              onClick={() => {
+                navigateRole('customer');
+              }}
+              className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-2xl transition font-extrabold text-xs uppercase tracking-wider shadow-md shadow-emerald-950/40 cursor-pointer"
+            >
+              Return to Customer Dashboard
+            </button>
+
+            {currentPath === '/admin' && (
+              <button
+                onClick={handleAdminLoginRedirect}
+                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/60 rounded-2xl transition font-extrabold text-xs uppercase tracking-wider cursor-pointer"
+              >
+                Log In as Approved Admin
+              </button>
+            )}
+          </div>
         </div>
-      </nav>
+      </div>
+    );
+  }
+
+  // Authenticated Dashboard Layout
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col max-w-full overflow-x-hidden">
+      
+      {/* Interactive Global Role-Switching Workspace Bar */}
+      <RoleSelector
+        currentRole={selectedRole}
+        phone={userProfile?.phone || userProfile?.email || 'Authenticated'}
+        profileName={userProfile?.name}
+        onLogout={handleLogout}
+        onChangeRole={(newRole) => {
+          if (newRole === 'admin') {
+            if (isAdminPasswordVerified) {
+              navigateRole('admin');
+            } else {
+              setShowAdminVerifyModal(true);
+              setAdminVerifyError('');
+              setAdminVerifyPasswordInput('');
+            }
+          } else {
+            navigateRole(newRole);
+          }
+        }}
+      />
+      
+      {/* 24/7 Background Notifications Access Banner Card */}
+      {selectedRole === 'rider' && notifPermission !== 'granted' && showNotifBanner && (
+        <div className="bg-gradient-to-r from-teal-50 to-indigo-50 border-b border-teal-100 p-4 font-sans text-xs shadow-xs animate-fade-in relative z-20">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-full bg-teal-500/10 text-teal-600 flex items-center justify-center shrink-0 text-base">
+                🔔
+              </div>
+              <div className="space-y-1">
+                <p className="font-bold text-slate-900 text-[12.5px]">Enable 24/7 Background Alarm Ringtones & Popups!</p>
+                <p className="text-slate-500 text-[11px] leading-relaxed">
+                  Hear siren alarms of instant orders and delivery dispatches even if you are browsing customer products, minimized, or of another browser tab!
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5 w-full md:w-auto shrink-0 justify-end">
+              <button
+                type="button"
+                onClick={handleRequestNotifPermission}
+                className="px-4 py-2 bg-indigo-600 font-extrabold text-white text-[11.5px] rounded-xl cursor-pointer hover:bg-indigo-700 active:scale-95 transition-all shadow-xs uppercase tracking-wider block text-center"
+              >
+                Allow System Speaker
+              </button>
+              <button
+                type="button"
+                onClick={handleDismissNotifBanner}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                title="Dismiss and ignore"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Dynamic desktop logout floating header for the Customer mobile-first app so they can switch roles on desktop */}
       {selectedRole === 'customer' && (
@@ -219,7 +771,7 @@ export default function App() {
           <div className="max-w-7xl mx-auto flex justify-between items-center">
             <span className="font-semibold flex items-center gap-1">
               <Sparkles className="w-3.5 h-3.5 text-yellow-600 animate-spin" />
-              Desktop Preview Helper: Switch to other workspaces via the dark navigation strip at the top anytime!
+              Desktop Preview Helper: Access partner options securely via your Profile settings once authorised!
             </span>
             <button 
               onClick={handleLogout}
@@ -240,20 +792,41 @@ export default function App() {
             onLogout={handleLogout}
             reloadUserProfile={reloadUserProfile}
             onSwitchRole={(newRole, customToken, customProfile) => {
-              if (customToken && customProfile) {
-                localStorage.setItem('swiftcart_jwt_token', customToken);
-                setToken(customToken);
-                setSelectedRole(newRole);
-                setUserProfile(customProfile);
-                setIsAuthenticated(true);
+              if (newRole === 'admin') {
+                if (isAdminPasswordVerified) {
+                  if (customToken && customProfile) {
+                    localStorage.setItem('swiftcart_jwt_token', customToken);
+                    setToken(customToken);
+                    setUserProfile(customProfile);
+                    setIsAuthenticated(true);
+                  }
+                  navigateRole('admin');
+                } else {
+                  setPendingAdminSwitch(
+                    customToken && customProfile
+                      ? { customToken, customProfile }
+                      : null
+                  );
+                  setShowAdminVerifyModal(true);
+                  setAdminVerifyError('');
+                  setAdminVerifyPasswordInput('');
+                }
               } else {
-                setSelectedRole(newRole);
+                if (customToken && customProfile) {
+                  localStorage.setItem('swiftcart_jwt_token', customToken);
+                  setToken(customToken);
+                  setUserProfile(customProfile);
+                  setIsAuthenticated(true);
+                  navigateRole(newRole);
+                } else {
+                  navigateRole(newRole);
+                }
               }
             }}
           />
         )}
 
-        {selectedRole === 'admin' && (
+        {selectedRole === 'admin' && isAdminPasswordVerified && (
           <AdminDashboard 
             userProfile={userProfile}
             onLogout={handleLogout}
@@ -271,10 +844,145 @@ export default function App() {
           <RiderDashboard 
             userProfile={userProfile}
             onLogout={handleLogout}
+            reloadUserProfile={reloadUserProfile}
           />
         )}
 
       </div>
+
+      {showAdminVerifyModal && (
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] animate-fade-in">
+          <div className="bg-white border border-slate-100 max-w-sm w-full rounded-[32px] p-6 shadow-2xl relative space-y-4">
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto text-3xl shadow-sm border border-emerald-100">
+                🔑
+              </div>
+              <h3 className="text-lg font-black text-slate-900 leading-tight">Admin Verification</h3>
+              <p className="text-xs text-slate-500 leading-normal font-sans">
+                Type the password for your approved administrator profile to unlock the secure workspace console.
+              </p>
+            </div>
+
+            {adminVerifyError && (
+              <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 font-bold text-xs rounded-xl flex items-center gap-2">
+                <span>⚠️</span>
+                <span>{adminVerifyError}</span>
+              </div>
+            )}
+
+            <form onSubmit={(e) => { e.preventDefault(); handleVerifyAdminPassword(); }} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Admin Password</label>
+                <input
+                  type="password"
+                  value={adminVerifyPasswordInput}
+                  onChange={(e) => setAdminVerifyPasswordInput(e.target.value)}
+                  placeholder="••••••••"
+                  autoFocus
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs px-4 py-3 rounded-xl focus:outline-none focus:border-emerald-500 font-bold transition-all"
+                  disabled={adminVerifyLoading}
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAdminVerifyModal(false);
+                    setAdminVerifyError('');
+                    setAdminVerifyPasswordInput('');
+                    setPendingAdminSwitch(null);
+                    // Redirect back if cancelling from /admin or if user role is not admin
+                    if (window.location.pathname === '/admin' || userProfile?.role !== 'admin') {
+                      navigateRole('customer');
+                    }
+                  }}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold text-[10.5px] rounded-xl uppercase transition cursor-pointer text-center"
+                  disabled={adminVerifyLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs uppercase shadow-md flex items-center justify-center cursor-pointer transition active:scale-95 text-center"
+                  disabled={adminVerifyLoading}
+                >
+                  {adminVerifyLoading ? 'Verifying...' : 'Verify'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PWA BACKGROUND EMERGENCY SIREN BLOCK OVERLAY */}
+      {isSWMiniAlarmActive && (
+        <div className="fixed inset-0 bg-red-650/95 backdrop-blur-md flex items-center justify-center p-4 z-[99999] animate-pulse">
+          <div className="bg-slate-900 border-4 border-red-500 max-w-md w-full rounded-[36px] p-8 shadow-2xl relative text-center space-y-6 text-white">
+            <div className="space-y-2">
+              <div className="w-20 h-20 bg-red-600 text-white rounded-3xl flex items-center justify-center mx-auto text-4xl shadow-lg border-2 border-red-400">
+                🚨
+              </div>
+              <h2 className="text-2xl font-black tracking-tight font-sans text-red-500 uppercase mt-4">
+                PWA Emergency Alarm Active
+              </h2>
+              <div className="inline-block px-3 py-1 bg-red-950 border border-red-800 text-red-450 font-mono text-[9px] font-extrabold uppercase rounded-full">
+                Active Mode: Woken from Background
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed font-medium">
+              A high-priority event was received for role <strong className="text-yellow-400 font-bold uppercase">{swMiniAlarmRole}</strong>. 
+              The application has been inactive, minimized, or closed for over 24 hours, but registered a real-time background dispatch push! Audio alarm sound loops immediately.
+            </p>
+
+            <div className="p-4 bg-slate-950/80 rounded-2xl border border-slate-800 text-left text-xs space-y-2.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-semibold">Matched Order ID:</span>
+                <span className="font-mono text-emerald-400 font-bold">#{swMiniAlarmOrderId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-semibold">Channel Resource:</span>
+                <span className="font-mono text-slate-300">Service Worker Msg</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-semibold">Volume Amplitude:</span>
+                <span className="text-yellow-400 font-bold">100% MAXIMUM</span>
+              </div>
+              <div className="text-[10px] text-slate-400 text-center border-t border-slate-900 pt-2 font-medium">
+                Siren Dual-Tone Frequencies: 1100Hz & 900Hz oscillations
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  logAlertEvent(swMiniAlarmOrderId, swMiniAlarmRole, 'accepted');
+                  setIsSWMiniAlarmActive(false);
+                  if (swMiniAlarmRole === 'rider' || swMiniAlarmRole === 'seller' || swMiniAlarmRole === 'admin') {
+                    setSelectedRole(swMiniAlarmRole as any);
+                  }
+                }}
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl text-xs uppercase shadow-lg shadow-emerald-950/40 transition active:scale-95 cursor-pointer text-center"
+              >
+                ⚡ Accept Dispatch & Silence Alarm
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => {
+                  logAlertEvent(swMiniAlarmOrderId, swMiniAlarmRole, 'rejected');
+                  setIsSWMiniAlarmActive(false);
+                }}
+                className="w-full py-2.5 bg-slate-850 hover:bg-slate-700 text-slate-400 font-bold rounded-xl text-[10px] uppercase transition cursor-pointer text-center"
+              >
+                Decline & Mute Loop
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
