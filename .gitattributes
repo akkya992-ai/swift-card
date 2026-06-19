@@ -1,0 +1,9 @@
+# Force Git to treat JAR and other binary assets correctly and never modify their line endings
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
