@@ -7,18 +7,25 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: android
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-java@v4
         with:
-          node-version: 20
+          distribution: temurin
+          java-version: 17
 
-      - run: npm install
+      - name: Grant permission
+        run: chmod +x gradlew
 
-      - run: npm run build
+      - name: Build APK
+        run: ./gradlew assembleDebug
 
       - uses: actions/upload-artifact@v4
         with:
-          name: web-build
-          path: dist
+          name: apk
+          path: android/app/build/outputs/apk/debug/*.apk
