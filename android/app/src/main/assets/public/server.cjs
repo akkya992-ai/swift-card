@@ -29,15 +29,25 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // server.ts
 var server_exports = {};
 __export(server_exports, {
+  InMemoryLRUTtlCache: () => InMemoryLRUTtlCache,
+  SimpleMutex: () => SimpleMutex,
+  acquireDistributedLock: () => acquireDistributedLock,
+  advanceSystemSequenceEpoch: () => advanceSystemSequenceEpoch,
+  apiCache: () => apiCache,
+  bootstrapRealtimeCacheSync: () => bootstrapRealtimeCacheSync,
   broadcastPromoNotification: () => broadcastPromoNotification,
   checkAndLogLowStock: () => checkAndLogLowStock,
   generateJWT: () => generateJWT,
   getAuthUser: () => getAuthUser,
   getOrHydrateUserById: () => getOrHydrateUserById,
+  invalidateCacheForTable: () => invalidateCacheForTable,
+  releaseDistributedLock: () => releaseDistributedLock,
   sanitizeSupabaseKey: () => sanitizeSupabaseKey,
   sanitizeSupabaseUrl: () => sanitizeSupabaseUrl,
   sendFCMNotification: () => sendFCMNotification,
-  verifyJWT: () => verifyJWT
+  systemSequenceEpoch: () => systemSequenceEpoch,
+  verifyJWT: () => verifyJWT,
+  writeMutex: () => writeMutex
 });
 module.exports = __toCommonJS(server_exports);
 var import_express = __toESM(require("express"), 1);
@@ -45,6 +55,7 @@ var import_path = __toESM(require("path"), 1);
 var import_fs = __toESM(require("fs"), 1);
 var import_crypto = __toESM(require("crypto"), 1);
 var import_pg = __toESM(require("pg"), 1);
+var import_ioredis = __toESM(require("ioredis"), 1);
 var import_vite = require("vite");
 var import_genai = require("@google/genai");
 var import_supabase_js = require("@supabase/supabase-js");
@@ -105,6 +116,323 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     console.warn("[SUPABASE REALTIME] Could not establish server-side Supabase client:", err);
   }
 }
+var systemSequenceEpoch = 1;
+var SimpleMutex = class {
+  constructor() {
+    this.queue = Promise.resolve();
+  }
+  async acquire() {
+    let release;
+    const promise = new Promise((resolve) => {
+      release = resolve;
+    });
+    const current = this.queue;
+    this.queue = current.then(() => promise);
+    await current;
+    return release;
+  }
+};
+var writeMutex = new SimpleMutex();
+var InMemoryLRUTtlCache = class {
+  constructor(maxEntries = 200, defaultTtlMs = 3e4) {
+    this.cache = /* @__PURE__ */ new Map();
+    this.redisClient = null;
+    this.redisSubscriber = null;
+    this.localTableVersions = /* @__PURE__ */ new Map();
+    this.maxEntries = maxEntries;
+    this.defaultTtlMs = defaultTtlMs;
+    const redisUrl = process.env.REDIS_URL || process.env.REDIS_HOST;
+    if (redisUrl) {
+      try {
+        const config = redisUrl.startsWith("redis://") ? redisUrl : `redis://${redisUrl}:6379`;
+        this.redisClient = new import_ioredis.default(config, {
+          maxRetriesPerRequest: 3,
+          reconnectOnError: () => true
+        });
+        this.redisSubscriber = new import_ioredis.default(config, {
+          maxRetriesPerRequest: 3,
+          reconnectOnError: () => true
+        });
+        this.syncTableVersionsFromRedis();
+        this.redisClient.on("connect", () => {
+          console.log("\u{1F7E2} [REDIS CLIENT CONNECTED] Syncing current persistent table cache versions...");
+          this.syncTableVersionsFromRedis();
+        });
+        this.redisSubscriber.subscribe("cache_invalidate_channel", (err) => {
+          if (err) {
+            console.error("\u274C [REDIS SUBCRIPTOR ERROR] Failed to subscribe to cache_invalidate_channel:", err);
+          } else {
+            console.log("\u{1F7E2} [REDIS CLUSTER BOUND] Fully subscribed to cache_invalidate_channel for horizontal scalability.");
+          }
+        });
+        this.redisSubscriber.on("message", (channel, message) => {
+          if (channel === "cache_invalidate_channel") {
+            try {
+              const payload = JSON.parse(message);
+              if (payload.tableName && payload.newVersion !== void 0) {
+                const existing = this.localTableVersions.get(payload.tableName) || 0;
+                if (payload.newVersion > existing) {
+                  this.localTableVersions.set(payload.tableName, payload.newVersion);
+                  this.localInvalidation(payload.key, payload.prefix, payload.isAll);
+                }
+              } else {
+                this.localInvalidation(payload.key, payload.prefix, payload.isAll);
+              }
+            } catch (e) {
+              console.warn("\u26A0\uFE0F [REDIS CLUSTER UPDATE UNPARSABLE] Malformed payload received:", message);
+            }
+          }
+        });
+        this.redisClient.on("error", (err) => console.log("\u26A0\uFE0F [REDIS CACHE OFFLINE] Shared caching off, local fallback active:", err.message));
+        console.log("\u{1F7E2} [SHARED REDIS ACTIVE] desync guards initialized with publisher/subscriber pipelines.");
+      } catch (err) {
+        console.warn("\u26A0\uFE0F [REDIS INITALIZATION ERROR] Graceful fallback to local RAM caching. Error:", err);
+      }
+    } else {
+      console.log("\u{1F4A1} [CACHING SUB-SYSTEM] Running in single-instance memory mode. Define REDIS_URL to spin up horizontal-scaling multi-instance syncing.");
+    }
+  }
+  getRedisClient() {
+    return this.redisClient;
+  }
+  async syncTableVersionsFromRedis() {
+    if (!this.redisClient) return;
+    try {
+      const versions = await this.redisClient.hgetall("cache:table_versions");
+      if (versions) {
+        for (const [table, verStr] of Object.entries(versions)) {
+          const remoteVer = parseInt(verStr || "0", 10);
+          const localVer = this.localTableVersions.get(table) || 0;
+          if (remoteVer > localVer) {
+            console.log(`\u{1F504} [REDIS SYNC] Table "${table}" has diverged (local: ${localVer}, remote: ${remoteVer}). Evicting local cache keys.`);
+            this.localTableVersions.set(table, remoteVer);
+            this.localInvalidation(void 0, `${table}_`, false);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("\u26A0\uFE0F [REDIS VERSION SYNC EXCEPTION] Bypass synchronization:", err.message);
+    }
+  }
+  get(key) {
+    const entry = this.cache.get(key);
+    if (!entry) return void 0;
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      console.log(`\u23F1\uFE0F [CACHE EXPIRED] Auto-invalidating key: "${key}"`);
+      return void 0;
+    }
+    entry.lastUsed = Date.now();
+    return entry.value;
+  }
+  // Set with Multi-tier Optimistic locking and Concurrency Shield (Clock-drift and out-of-order write-proof, Issue 1 & 3)
+  set(key, value, ttlMs = this.defaultTtlMs, systemEpochValue = systemSequenceEpoch, writeTimestamp = Date.now()) {
+    const currentEntry = this.cache.get(key);
+    let finalEpochValue = systemEpochValue;
+    let finalWriteTimestamp = writeTimestamp;
+    if (systemEpochValue > 1e12) {
+      finalWriteTimestamp = systemEpochValue;
+      finalEpochValue = systemSequenceEpoch;
+    }
+    if (currentEntry) {
+      if (currentEntry.systemEpoch >= finalEpochValue) {
+        console.log(`\u{1F6E1}\uFE0F [CONCURRENCY SHIELD] Blocked stale cache overwrite for key: "${key}" (Cached Epoch: ${currentEntry.systemEpoch} >= Request Epoch: ${finalEpochValue})`);
+        return false;
+      }
+      if (currentEntry.writeTimestamp >= finalWriteTimestamp) {
+        console.log(`\u{1F6E1}\uFE0F [CONCURRENCY SHIELD] Blocked stale cache overwrite for key: "${key}" (Cached TS: ${currentEntry.writeTimestamp} >= Request TS: ${finalWriteTimestamp})`);
+        return false;
+      }
+    }
+    if (this.cache.size >= this.maxEntries) {
+      let oldestKey = null;
+      let oldestUsed = Infinity;
+      for (const [k, v] of this.cache.entries()) {
+        if (v.lastUsed < oldestUsed) {
+          oldestUsed = v.lastUsed;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey !== null) {
+        this.cache.delete(oldestKey);
+        console.log(`\u{1F5D1}\uFE0F [CACHE LRU EVICTION] Evicted stale key: "${oldestKey}"`);
+      }
+    }
+    const version = currentEntry ? currentEntry.version + 1 : 1;
+    this.cache.set(key, {
+      value,
+      expiresAt: Date.now() + ttlMs,
+      lastUsed: Date.now(),
+      version,
+      systemEpoch: finalEpochValue,
+      writeTimestamp: finalWriteTimestamp
+    });
+    return true;
+  }
+  localInvalidation(key, prefix, isAll) {
+    if (isAll) {
+      this.cache.clear();
+      console.log(`\u{1F9F9} [CACHING ENGINE] Global cache flushed completely.`);
+      return;
+    }
+    if (key) {
+      if (this.cache.delete(key)) {
+        console.log(`\u{1F9F9} [CACHING ENGINE] Purged key-level cache for key: "${key}"`);
+      }
+    }
+    if (prefix) {
+      let count = 0;
+      for (const k of this.cache.keys()) {
+        if (typeof k === "string" && k.startsWith(prefix)) {
+          this.cache.delete(k);
+          count++;
+        }
+      }
+      if (count > 0) {
+        console.log(`\u{1F9F9} [CACHING ENGINE] Purged prefix pattern cache with ${count} items matching "${prefix}"`);
+      }
+    }
+  }
+  async invalidateForTableRemote(tableName) {
+    if (this.redisClient) {
+      try {
+        const nextVer = await this.redisClient.hincrby("cache:table_versions", tableName, 1);
+        this.localTableVersions.set(tableName, nextVer);
+        await this.redisClient.publish("cache_invalidate_channel", JSON.stringify({
+          tableName,
+          newVersion: nextVer,
+          prefix: `${tableName}_`
+        }));
+      } catch (err) {
+        this.redisClient.publish("cache_invalidate_channel", JSON.stringify({ prefix: `${tableName}_` })).catch(() => {
+        });
+      }
+    }
+  }
+  invalidate(key) {
+    const keyStr = key;
+    this.localInvalidation(keyStr, void 0, false);
+    if (this.redisClient) {
+      this.redisClient.publish("cache_invalidate_channel", JSON.stringify({ key: keyStr })).catch(() => {
+      });
+    }
+  }
+  invalidatePrefix(prefix) {
+    this.localInvalidation(void 0, prefix, false);
+    if (this.redisClient) {
+      this.redisClient.publish("cache_invalidate_channel", JSON.stringify({ prefix })).catch(() => {
+      });
+    }
+  }
+  invalidateAll() {
+    this.localInvalidation(void 0, void 0, true);
+    if (this.redisClient) {
+      this.redisClient.publish("cache_invalidate_channel", JSON.stringify({ isAll: true })).catch(() => {
+      });
+    }
+  }
+};
+async function advanceSystemSequenceEpoch() {
+  const client = apiCache.getRedisClient();
+  if (client) {
+    try {
+      const remoteEpoch = await client.incr("system_sequence_epoch");
+      systemSequenceEpoch = remoteEpoch;
+      return remoteEpoch;
+    } catch (err) {
+    }
+  }
+  systemSequenceEpoch += 1;
+  return systemSequenceEpoch;
+}
+async function acquireDistributedLock(lockKey, ttlMs = 15e3) {
+  const client = apiCache.getRedisClient();
+  if (!client) return "local_mutex";
+  const token = import_crypto.default.randomUUID();
+  try {
+    const status = await client.set(lockKey, token, "PX", ttlMs, "NX");
+    if (status === "OK") {
+      return token;
+    }
+  } catch (err) {
+    console.warn("\u26A0\uFE0F [DISTRIBUTED LOCK EXCEPTION] Bypassing key set:", err.message);
+  }
+  return null;
+}
+async function releaseDistributedLock(lockKey, token) {
+  const client = apiCache.getRedisClient();
+  if (!client || token === "local_mutex") return;
+  const luaScript = `
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+      return redis.call("del", KEYS[1])
+    else
+      return 0
+    end
+  `;
+  try {
+    await client.eval(luaScript, 1, lockKey, token);
+  } catch (err) {
+    console.warn("\u26A0\uFE0F [DISTRIBUTED UNMUTE CONTROL CLEAR EXCEPTION] Bypassing eval:", err.message);
+  }
+}
+var apiCache = new InMemoryLRUTtlCache(500, 3e4);
+function invalidateCacheForTable(tableName) {
+  console.log(`\u{1F9F9} [TARGETED CELLULAR INVALIDATION] Selective cache purges triggered for: "${tableName}"`);
+  if (tableName === "products" || tableName === "restaurant_products") {
+    apiCache.invalidatePrefix("products_");
+    apiCache.invalidatePrefix("restaurant_products_");
+  } else if (tableName === "restaurants") {
+    apiCache.invalidatePrefix("restaurants_");
+  } else if (tableName === "orders") {
+    apiCache.invalidatePrefix("orders_");
+  } else if (tableName === "categories") {
+    apiCache.invalidate("categories_list");
+  } else if (tableName === "restaurant_categories") {
+    apiCache.invalidate("restaurant_categories_list");
+  } else if (tableName === "menu_categories") {
+    apiCache.invalidatePrefix("menu_categories_");
+  } else {
+    apiCache.invalidatePrefix(`${tableName}_`);
+  }
+  apiCache.invalidateForTableRemote(tableName).catch(() => {
+  });
+}
+function bootstrapRealtimeCacheSync() {
+  if (!serverSupabase) {
+    console.warn("\u26A0\uFE0F [REALTIME CACHE SYNC] Skipping realtime binding: serverSupabase client is not loaded.");
+    return;
+  }
+  try {
+    const channel = serverSupabase.channel("supabase-realtime-cache-sync").on("postgres_changes", { event: "*", schema: "public" }, (payload) => {
+      const table = payload.table;
+      console.log(`\u26A1 [SUPABASE REALTIME DB STATE SHIFT] Event "${payload.eventType}" on table: "${table}"`);
+      invalidateCacheForTable(table);
+    }).subscribe();
+    console.log("\u{1F7E2} [REALTIME CACHE SYNC] Successfully bound Supabase Realtime to fast in-memory eviction filters.");
+    setInterval(async () => {
+      if (!pgPool) return;
+      try {
+        const pRes = await pgPool.query("SELECT COUNT(*) as cnt FROM products");
+        const remoteProductCount = parseInt(pRes.rows[0]?.cnt || "0", 10);
+        const localProductCount = db.products.length;
+        if (localProductCount !== remoteProductCount) {
+          console.warn(`\u{1F504} [ADAPTIVE CACHE RECONCILIATION] Mismatch detected on products table! Local: ${localProductCount}, Remote: ${remoteProductCount}. Executing alignment.`);
+          apiCache.invalidatePrefix("products_");
+        }
+        const rRes = await pgPool.query("SELECT COUNT(*) as cnt FROM restaurants");
+        const remoteRestaurantCount = parseInt(rRes.rows[0]?.cnt || "0", 10);
+        const localRestaurantCount = (db.restaurants || []).length;
+        if (localRestaurantCount !== remoteRestaurantCount) {
+          console.warn(`\u{1F504} [ADAPTIVE CACHE RECONCILIATION] Mismatch detected on restaurants table! Local: ${localRestaurantCount}, Remote: ${remoteRestaurantCount}. Executing alignment.`);
+          apiCache.invalidatePrefix("restaurants_");
+        }
+      } catch (err) {
+      }
+    }, 15e3);
+  } catch (err) {
+    console.warn("\u26A0\uFE0F [REALTIME CACHE SYNC ERROR] Failed to initialize Realtime listener:", err);
+  }
+}
 function syncUserToSupabase(user) {
   if (!serverSupabase) {
     console.log("[SUPABASE SYNC] Skipping user synchronization: serverSupabase is not configured yet.");
@@ -127,7 +455,7 @@ function syncUserToSupabase(user) {
       let sEmail = (user.email || "").trim().toLowerCase();
       const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
       if (!emailRegex.test(sEmail)) {
-        sEmail = `user_${userUUID.substring(0, 8)}@swiftcart.com`;
+        sEmail = `user_${userUUID.substring(0, 8)}@dailymart.com`;
       }
       let sPhone = (user.phone || "").replace(/\D/g, "");
       if (sPhone.length < 10) {
@@ -165,7 +493,7 @@ function syncUserToSupabase(user) {
         let finalEmail = sEmail;
         const { data: emailConflict } = await serverSupabase.from("users").select("id").eq("email", sEmail).maybeSingle();
         if (emailConflict) {
-          finalEmail = `user_${userUUID.substring(0, 8)}@swiftcart.com`;
+          finalEmail = `user_${userUUID.substring(0, 8)}@dailymart.com`;
         }
         const { error: insertErr } = await serverSupabase.from("users").insert([{
           id: userUUID,
@@ -697,7 +1025,7 @@ async function getOrHydrateUserById(userId, fallbackClaims) {
         user = {
           id: su.id,
           uuid: su.id,
-          email: su.email || fallbackClaims?.email || `user_${su.id.substring(0, 8)}@swiftcart.com`,
+          email: su.email || fallbackClaims?.email || `user_${su.id.substring(0, 8)}@dailymart.com`,
           phone: su.phone || fallbackClaims?.phone || "",
           name: su.name || fallbackClaims?.name || "Resident User",
           role: su.role || fallbackClaims?.role || "customer",
@@ -732,7 +1060,7 @@ async function getOrHydrateUserById(userId, fallbackClaims) {
   if (fallbackClaims) {
     user = {
       id: userId,
-      email: fallbackClaims.email || `user_${userId.substring(0, 8)}@swiftcart.com`,
+      email: fallbackClaims.email || `user_${userId.substring(0, 8)}@dailymart.com`,
       phone: fallbackClaims.phone || "",
       name: fallbackClaims.name || "Resident User",
       role: fallbackClaims.role || "customer",
@@ -783,7 +1111,7 @@ async function syncWithSupabaseOnStartup() {
   if (!pgPool) {
     console.log(`
 ============================================================
-\u{1F50D} SWIFTCART SUPABASE STARTUP VERIFICATION:
+\u{1F50D} DAILY MART SUPABASE STARTUP VERIFICATION:
 - Connected to Supabase: FALSE
 - DATABASE_URL loaded: FALSE
 - Total orders loaded from Supabase: 0 (Supabase not connected)
@@ -806,7 +1134,7 @@ async function syncWithSupabaseOnStartup() {
         client.release();
         console.log(`
 ============================================================
-\u{1F50D} SWIFTCART SUPABASE STARTUP VERIFICATION:
+\u{1F50D} DAILY MART SUPABASE STARTUP VERIFICATION:
 - Connected to Supabase: FALSE (Tables not initialized)
 - DATABASE_URL loaded: TRUE
 - Total orders loaded from Supabase: 0
@@ -815,6 +1143,66 @@ async function syncWithSupabaseOnStartup() {
 ============================================================
         `);
         return loadDatabase();
+      }
+      try {
+        await client.query(`
+          CREATE OR REPLACE FUNCTION process_order_stock_reservation()
+          RETURNS TRIGGER AS $$
+          DECLARE
+              current_available_stock INT;
+              parent_order_status VARCHAR(50);
+              bypass_check VARCHAR(50);
+          BEGIN
+              -- Allow bypassing stock check for synchronization operations
+              BEGIN
+                  SELECT current_setting('app.bypass_stock_check', true) INTO bypass_check;
+              EXCEPTION WHEN OTHERS THEN
+                  bypass_check := 'false';
+              END;
+
+              IF bypass_check = 'true' THEN
+                  RETURN NEW;
+              END IF;
+
+              -- Select the stock with an exclusive row lock to block competing concurrent checkouts on the same product
+              SELECT stock - reserved_stock INTO current_available_stock
+              FROM inventory
+              WHERE product_id = NEW.product_id
+              FOR UPDATE;
+
+              IF NOT FOUND THEN
+                  RAISE EXCEPTION 'Product catalog reference % does not exist in store inventory.', NEW.product_id;
+              END IF;
+
+              -- Validate inventory quantity sufficiency
+              IF current_available_stock < NEW.quantity THEN
+                  RAISE EXCEPTION 'Insufficient stock alert: Product % requested qty % but only % remains.', 
+                      NEW.product_name, NEW.quantity, current_available_stock;
+              END IF;
+
+              -- Check if parent order is confirmed or placed
+              SELECT status::text INTO parent_order_status FROM orders WHERE id = NEW.order_id;
+
+              -- If parent order is placed, increment reserved_stock, otherwise deduct from stock immediately
+              IF parent_order_status = 'placed' THEN
+                  UPDATE inventory
+                  SET reserved_stock = reserved_stock + NEW.quantity,
+                      updated_at = NOW()
+                  WHERE product_id = NEW.product_id;
+              ELSE
+                  UPDATE inventory
+                  SET stock = stock - NEW.quantity,
+                      updated_at = NOW()
+                  WHERE product_id = NEW.product_id;
+              END IF;
+
+              RETURN NEW;
+          END;
+          $$ LANGUAGE plpgsql;
+        `);
+        console.log("\u{1F7E2} [SUPABASE STARTUP] Upgraded process_order_stock_reservation trigger function to support administrative sync bypass.");
+      } catch (funcUpgradeErr) {
+        console.warn("\u26A0\uFE0F [SUPABASE STARTUP WARNING] Could not upgrade process_order_stock_reservation function:", funcUpgradeErr.message || funcUpgradeErr);
       }
       try {
         await client.query(`
@@ -905,6 +1293,38 @@ async function syncWithSupabaseOnStartup() {
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
           );
         `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS hostels (
+            id VARCHAR(100) PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            image TEXT,
+            address TEXT,
+            phone VARCHAR(20),
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+          );
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS tiffin_categories (
+            id VARCHAR(100) PRIMARY KEY,
+            hostel_id VARCHAR(100) NOT NULL REFERENCES hostels(id) ON DELETE CASCADE,
+            name VARCHAR(100) NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+          );
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS tiffin_items (
+            id VARCHAR(100) PRIMARY KEY,
+            hostel_id VARCHAR(100) NOT NULL REFERENCES hostels(id) ON DELETE CASCADE,
+            tiffin_category_id VARCHAR(100) NOT NULL REFERENCES tiffin_categories(id) ON DELETE CASCADE,
+            name VARCHAR(100) NOT NULL,
+            price NUMERIC(10, 2) NOT NULL,
+            description TEXT,
+            image TEXT,
+            is_available BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+          );
+        `);
       } catch (colErr) {
         console.warn("\u{1F4A1} [SUPABASE STARTUP] Warning during orders and alert_logs auto-heal:", colErr.message || colErr);
       }
@@ -968,7 +1388,7 @@ async function syncWithSupabaseOnStartup() {
       const { rows: tokenRows } = await client.query("SELECT * FROM notification_tokens").catch(() => ({ rows: [] }));
       console.log(`
 ============================================================
-\u{1F50D} SWIFTCART SUPABASE STARTUP VERIFICATION:
+\u{1F50D} DAILY MART SUPABASE STARTUP VERIFICATION:
 - Connected to Supabase: TRUE
 - DATABASE_URL loaded: TRUE
 - Total orders loaded from Supabase: ${orderRows.length}
@@ -1172,13 +1592,13 @@ async function syncWithSupabaseOnStartup() {
         roleRequests: localRequests,
         outboundNotifications: []
       };
-      import_fs.default.writeFileSync(DB_FILE, JSON.stringify(syncedDb, null, 2), "utf8");
+      await import_fs.default.promises.writeFile(DB_FILE, JSON.stringify(syncedDb, null, 2), "utf8");
       client.release();
       return syncedDb;
     } catch (err) {
       console.log(`
 ============================================================
-\u{1F50D} SWIFTCART SUPABASE STARTUP VERIFICATION:
+\u{1F50D} DAILY MART SUPABASE STARTUP VERIFICATION:
 - Connected to Supabase: FALSE (Query error during execution)
 - DATABASE_URL loaded: TRUE
 - Total orders loaded from Supabase: 0
@@ -1193,7 +1613,7 @@ async function syncWithSupabaseOnStartup() {
   } catch (err) {
     console.log(`
 ============================================================
-\u{1F50D} SWIFTCART SUPABASE STARTUP VERIFICATION:
+\u{1F50D} DAILY MART SUPABASE STARTUP VERIFICATION:
 - Connected to Supabase: FALSE (Connection error during execution)
 - DATABASE_URL loaded: TRUE
 - Total orders loaded from Supabase: 0
@@ -1316,6 +1736,35 @@ function loadDatabase() {
         restaurantProducts: parsed.restaurantProducts || [
           { id: "rp_1", restaurantId: "rt_1", menuCategoryId: "mc_1", name: "[Product Placeholder 1]", price: 199, description: "Freshly prepared dynamic item. Conforms to system constraints.", image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=120", isVeg: true, isAvailable: true },
           { id: "rp_2", restaurantId: "rt_1", menuCategoryId: "mc_2", name: "[Product Placeholder 2]", price: 249, description: "Premium selection prepared hot on-demand.", image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=120", isVeg: false, isAvailable: true }
+        ],
+        hostels: parsed.hostels || [
+          { id: "h_1", name: "Sree Sai Luxury Hostel (Girls & Boys)", image: "https://images.unsplash.com/photo-1555854817-2b2260177747?auto=format&fit=crop&q=80&w=200", address: "Mahabubabad Sector 2", phone: "9988112233", isActive: true },
+          { id: "h_2", name: "Starlight Premium Residency & Mess", image: "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?auto=format&fit=crop&q=80&w=200", address: "Complex Road Sector 5", phone: "9988112244", isActive: true },
+          { id: "h_3", name: "Royal Comfort Hostel & Dining", image: "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&q=80&w=200", address: "Kuravi Cross Road", phone: "9988112255", isActive: true }
+        ],
+        tiffinCategories: parsed.tiffinCategories || [
+          { id: "tc_1_1", hostelId: "h_1", name: "Breakfast" },
+          { id: "tc_1_2", hostelId: "h_1", name: "Lunch" },
+          { id: "tc_1_3", hostelId: "h_1", name: "Dinner" },
+          { id: "tc_1_4", hostelId: "h_1", name: "Snacks" },
+          { id: "tc_2_1", hostelId: "h_2", name: "Breakfast" },
+          { id: "tc_2_2", hostelId: "h_2", name: "Lunch" },
+          { id: "tc_2_3", hostelId: "h_2", name: "Dinner" },
+          { id: "tc_2_4", hostelId: "h_2", name: "Snacks" },
+          { id: "tc_3_1", hostelId: "h_3", name: "Breakfast" },
+          { id: "tc_3_2", hostelId: "h_3", name: "Lunch" },
+          { id: "tc_3_3", hostelId: "h_3", name: "Dinner" },
+          { id: "tc_3_4", hostelId: "h_3", name: "Snacks" }
+        ],
+        tiffinItems: parsed.tiffinItems || [
+          { id: "ti_1", hostelId: "h_1", tiffinCategoryId: "tc_1_1", name: "Butter Idli (2 Pcs) with Chutney", price: 50, description: "Soft steamed rice cakes served with coconut chutney & sambar.", image: "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+          { id: "ti_2", hostelId: "h_1", tiffinCategoryId: "tc_1_1", name: "Masala Dosa with Sambar", price: 60, description: "Crispy lentil crepe filled with spiced potato mash.", image: "https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+          { id: "ti_3", hostelId: "h_1", tiffinCategoryId: "tc_1_2", name: "Full Veg Meals", price: 100, description: "Rice, dal, standard seasonal curry, curd, papad, and pickle.", image: "https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+          { id: "ti_4", hostelId: "h_1", tiffinCategoryId: "tc_1_2", name: "Egg Curry Special Meal", price: 120, description: "Flavourful egg gravy served with hot jeera rice & roti.", image: "https://images.unsplash.com/photo-1547825407-2d060104b7f8?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+          { id: "ti_5", hostelId: "h_1", tiffinCategoryId: "tc_1_3", name: "Soft Chapati (3 Pcs) with Korma", price: 70, description: "Thin handmade wheat flatbreads with mixed vegetable white gravy.", image: "https://images.unsplash.com/photo-1626132647523-66f5bf380027?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+          { id: "ti_6", hostelId: "h_2", tiffinCategoryId: "tc_2_1", name: "Aloo Paratha with Curd", price: 65, description: "Pan-fried whole wheat flatbread stuffed with spiced potatoes.", image: "https://images.unsplash.com/photo-1601050690597-df056fb4ce78?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+          { id: "ti_7", hostelId: "h_2", tiffinCategoryId: "tc_2_2", name: "Punjabi Deluxe Thali", price: 130, description: "Paneer butter masala, yellow dal fry, butter roti, rice, raita.", image: "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+          { id: "ti_8", hostelId: "h_2", tiffinCategoryId: "tc_2_2", name: "Chicken Biryani Special", price: 150, description: "Fragrant basmati rice layered with marinated chicken, served with raita.", image: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&q=80&w=120", isAvailable: true }
         ]
       };
       return deduplicateAndScrubDb(rawDb);
@@ -1351,6 +1800,35 @@ function loadDatabase() {
     restaurantProducts: [
       { id: "rp_1", restaurantId: "rt_1", menuCategoryId: "mc_1", name: "[Product Placeholder 1]", price: 199, description: "Freshly prepared dynamic item. Conforms to system constraints.", image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=120", isVeg: true, isAvailable: true },
       { id: "rp_2", restaurantId: "rt_1", menuCategoryId: "mc_2", name: "[Product Placeholder 2]", price: 249, description: "Premium selection prepared hot on-demand.", image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=120", isVeg: false, isAvailable: true }
+    ],
+    hostels: [
+      { id: "h_1", name: "Sree Sai Luxury Hostel (Girls & Boys)", image: "https://images.unsplash.com/photo-1555854817-2b2260177747?auto=format&fit=crop&q=80&w=200", address: "Mahabubabad Sector 2", phone: "9988112233", isActive: true },
+      { id: "h_2", name: "Starlight Premium Residency & Mess", image: "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?auto=format&fit=crop&q=80&w=200", address: "Complex Road Sector 5", phone: "9988112244", isActive: true },
+      { id: "h_3", name: "Royal Comfort Hostel & Dining", image: "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&q=80&w=200", address: "Kuravi Cross Road", phone: "9988112255", isActive: true }
+    ],
+    tiffinCategories: [
+      { id: "tc_1_1", hostelId: "h_1", name: "Breakfast" },
+      { id: "tc_1_2", hostelId: "h_1", name: "Lunch" },
+      { id: "tc_1_3", hostelId: "h_1", name: "Dinner" },
+      { id: "tc_1_4", hostelId: "h_1", name: "Snacks" },
+      { id: "tc_2_1", hostelId: "h_2", name: "Breakfast" },
+      { id: "tc_2_2", hostelId: "h_2", name: "Lunch" },
+      { id: "tc_2_3", hostelId: "h_2", name: "Dinner" },
+      { id: "tc_2_4", hostelId: "h_2", name: "Snacks" },
+      { id: "tc_3_1", hostelId: "h_3", name: "Breakfast" },
+      { id: "tc_3_2", hostelId: "h_3", name: "Lunch" },
+      { id: "tc_3_3", hostelId: "h_3", name: "Dinner" },
+      { id: "tc_3_4", hostelId: "h_3", name: "Snacks" }
+    ],
+    tiffinItems: [
+      { id: "ti_1", hostelId: "h_1", tiffinCategoryId: "tc_1_1", name: "Butter Idli (2 Pcs) with Chutney", price: 50, description: "Soft steamed rice cakes served with coconut chutney & sambar.", image: "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+      { id: "ti_2", hostelId: "h_1", tiffinCategoryId: "tc_1_1", name: "Masala Dosa with Sambar", price: 60, description: "Crispy lentil crepe filled with spiced potato mash.", image: "https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+      { id: "ti_3", hostelId: "h_1", tiffinCategoryId: "tc_1_2", name: "Full Veg Meals", price: 100, description: "Rice, dal, standard seasonal curry, curd, papad, and pickle.", image: "https://images.unsplash.com/photo-1546833999-b9f581a1996d?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+      { id: "ti_4", hostelId: "h_1", tiffinCategoryId: "tc_1_2", name: "Egg Curry Special Meal", price: 120, description: "Flavourful egg gravy served with hot jeera rice & roti.", image: "https://images.unsplash.com/photo-1547825407-2d060104b7f8?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+      { id: "ti_5", hostelId: "h_1", tiffinCategoryId: "tc_1_3", name: "Soft Chapati (3 Pcs) with Korma", price: 70, description: "Thin handmade wheat flatbreads with mixed vegetable white gravy.", image: "https://images.unsplash.com/photo-1626132647523-66f5bf380027?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+      { id: "ti_6", hostelId: "h_2", tiffinCategoryId: "tc_2_1", name: "Aloo Paratha with Curd", price: 65, description: "Pan-fried whole wheat flatbread stuffed with spiced potatoes.", image: "https://images.unsplash.com/photo-1601050690597-df056fb4ce78?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+      { id: "ti_7", hostelId: "h_2", tiffinCategoryId: "tc_2_2", name: "Punjabi Deluxe Thali", price: 130, description: "Paneer butter masala, yellow dal fry, butter roti, rice, raita.", image: "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&q=80&w=120", isAvailable: true },
+      { id: "ti_8", hostelId: "h_2", tiffinCategoryId: "tc_2_2", name: "Chicken Biryani Special", price: 150, description: "Fragrant basmati rice layered with marinated chicken, served with raita.", image: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&q=80&w=120", isAvailable: true }
     ]
   };
 }
@@ -1367,13 +1845,29 @@ function notifySseClients(payload) {
   });
 }
 var isStartupSyncCompleted = false;
-function saveDatabase(dbData) {
+async function saveDatabase(dbData, tableHint) {
   dbData = deduplicateAndScrubDb(dbData);
+  const releaseLocal = await writeMutex.acquire();
+  const lockToken = await acquireDistributedLock("lock:global_database_writer");
   try {
-    import_fs.default.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2), "utf8");
+    const currentEpoch = await advanceSystemSequenceEpoch();
+    console.log(`\u{1F512} [SINGLE WRITER LOCKED] Lock acquired. Monotonic system sequence advanced to logical Epoch: ${currentEpoch}`);
+    await import_fs.default.promises.writeFile(DB_FILE, JSON.stringify(dbData, null, 2), "utf8");
     notifySseClients({ type: "refresh_all", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+    if (tableHint) {
+      invalidateCacheForTable(tableHint);
+    } else {
+      apiCache.invalidatePrefix("products_");
+      apiCache.invalidatePrefix("restaurants_");
+      apiCache.invalidatePrefix("orders_");
+    }
   } catch (e) {
-    console.error("Failed to persist database file", e);
+    console.error("Failed to persist database file", e.message || e);
+  } finally {
+    if (lockToken) {
+      await releaseDistributedLock("lock:global_database_writer", lockToken);
+    }
+    releaseLocal();
   }
   if (!pgPool) return;
   if (!isStartupSyncCompleted) {
@@ -1382,13 +1876,19 @@ function saveDatabase(dbData) {
   }
   pgPool.connect().then(async (client) => {
     try {
+      try {
+        await client.query("SET app.bypass_stock_check = 'true'");
+        console.log("\u{1F7E2} [SUPABASE SYNC] Bypassed stock check validation trigger for this synchronization run session.");
+      } catch (bypassErr) {
+        console.warn("\u26A0\uFE0F [SUPABASE SYNC WARNING] Could not set app.bypass_stock_check session parameter:", bypassErr.message || bypassErr);
+      }
       const seenEmails = /* @__PURE__ */ new Set();
       const seenPhones = /* @__PURE__ */ new Set();
       for (const user of dbData.users) {
         try {
           const uId = toUUID(user.id);
           let sEmail = (user.email || "").trim().toLowerCase();
-          if (!sEmail.includes("@")) sEmail = `user_${uId.substring(0, 8)}@swiftcart.com`;
+          if (!sEmail.includes("@")) sEmail = `user_${uId.substring(0, 8)}@dailymart.com`;
           if (seenEmails.has(sEmail)) {
             const parts = sEmail.split("@");
             sEmail = `${parts[0]}_${uId.substring(0, 5)}@${parts[1]}`;
@@ -1463,13 +1963,13 @@ function saveDatabase(dbData) {
             return ("9" + cleanDigits).substring(0, 10).padEnd(10, "0");
           };
           const getDeterministicEmail = (idStr, originalEmail, forceDeterministic = false) => {
-            if (originalEmail && originalEmail.includes("@") && !originalEmail.includes("seller@swiftcart.com") && !forceDeterministic) {
+            if (originalEmail && originalEmail.includes("@") && !originalEmail.includes("seller@dailymart.com") && !forceDeterministic) {
               return originalEmail;
             }
-            return `seller_${idStr.substring(0, 8)}_${idStr.substring(9, 13)}@swiftcart.com`;
+            return `seller_${idStr.substring(0, 8)}_${idStr.substring(9, 13)}@dailymart.com`;
           };
           let userPhone = getDeterministicPhone(rawUserId, seller.phone);
-          let userEmail = getDeterministicEmail(rawUserId, seller.email || `seller_${seller.id.substring(0, 8)}@swiftcart.com`);
+          let userEmail = getDeterministicEmail(rawUserId, seller.email || `seller_${seller.id.substring(0, 8)}@dailymart.com`);
           const userCheck = await client.query("SELECT id FROM users WHERE id = $1", [uId]);
           if (userCheck.rows.length === 0) {
             try {
@@ -1597,7 +2097,7 @@ function saveDatabase(dbData) {
             return `${part1}-${part2}-${part3}-${part4}`;
           };
           let riderPhone = getDeterministicRiderPhone(r.id, r.phone);
-          let riderEmail = `rider_${r.id.substring(0, 8)}@swiftcart.com`;
+          let riderEmail = `rider_${r.id.substring(0, 8)}@dailymart.com`;
           const userCheck = await client.query("SELECT id FROM users WHERE id = $1", [uId]);
           if (userCheck.rows.length === 0) {
             try {
@@ -1617,7 +2117,7 @@ function saveDatabase(dbData) {
               );
             } catch (uErr) {
               const fallbackPhone = getDeterministicRiderPhone(r.id, void 0, true);
-              const fallbackEmail = `rider_fb_${r.id.substring(0, 8)}@swiftcart.com`;
+              const fallbackEmail = `rider_fb_${r.id.substring(0, 8)}@dailymart.com`;
               await client.query(
                 `INSERT INTO users (id, email, phone, password_hash, role, name, created_at)
                  VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -1713,7 +2213,7 @@ function saveDatabase(dbData) {
               if (sellerNameCheck.rows.length > 0) {
                 resolvedSellerId = sellerNameCheck.rows[0].id;
               } else {
-                const sellerEmailCheck = await client.query("SELECT id FROM sellers WHERE email = $1", [`seller_${prod.sellerId || "fc60acc5-a3e5-4c4e-ae27-b639249e84d4"}@swiftcart.com`]);
+                const sellerEmailCheck = await client.query("SELECT id FROM sellers WHERE email = $1", [`seller_${prod.sellerId || "fc60acc5-a3e5-4c4e-ae27-b639249e84d4"}@dailymart.com`]);
                 if (sellerEmailCheck.rows.length > 0) {
                   resolvedSellerId = sellerEmailCheck.rows[0].id;
                 } else {
@@ -1721,13 +2221,13 @@ function saveDatabase(dbData) {
                     `INSERT INTO users (id, email, phone, password_hash, role, name)
                      VALUES ($1, $2, $3, $4, $5, $6)
                      ON CONFLICT (id) DO NOTHING`,
-                    [sUserUUID, `seller_${prod.sellerId || "fc60acc5-a3e5-4c4e-ae27-b639249e84d4"}@swiftcart.com`, "0000000000", "seller-default-pass", "seller", prod.sellerName || "Verified Seller"]
+                    [sUserUUID, `seller_${prod.sellerId || "fc60acc5-a3e5-4c4e-ae27-b639249e84d4"}@dailymart.com`, "0000000000", "seller-default-pass", "seller", prod.sellerName || "Verified Seller"]
                   );
                   await client.query(
                     `INSERT INTO sellers (id, user_id, store_name, owner_name, phone, email, address, status)
                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                      ON CONFLICT (id) DO NOTHING`,
-                    [sId, sUserUUID, prod.sellerName || "Verified Store", prod.sellerName || "Verified Owner", "0000000000", `seller_${prod.sellerId || "fc60acc5-a3e5-4c4e-ae27-b639249e84d4"}@swiftcart.com`, "Main Market Delhi Base", "approved"]
+                    [sId, sUserUUID, prod.sellerName || "Verified Store", prod.sellerName || "Verified Owner", "0000000000", `seller_${prod.sellerId || "fc60acc5-a3e5-4c4e-ae27-b639249e84d4"}@dailymart.com`, "Main Market Delhi Base", "approved"]
                   );
                   resolvedSellerId = sId;
                 }
@@ -1782,7 +2282,7 @@ function saveDatabase(dbData) {
                 `INSERT INTO users (id, email, phone, password_hash, role, name)
                  VALUES ($1, $2, $3, $4, $5, $6)
                  ON CONFLICT (id) DO NOTHING`,
-                [defaultCustUserId, "default_customer@swiftcart.com", "0000000000", "demo-customer-session-password", "customer", "Default Customer"]
+                [defaultCustUserId, "default_customer@dailymart.com", "0000000000", "demo-customer-session-password", "customer", "Default Customer"]
               );
             }
             custId = defaultCustUserId;
@@ -1879,6 +2379,7 @@ function saveDatabase(dbData) {
           }
         }
       }
+      console.log("\u{1F7E2} [SUPABASE SYNC COMPLETED] Synchronization run finished successfully.");
     } catch (err) {
       console.error("\u274C [SUPABASE SYNC ERROR]", err.message || err);
     } finally {
@@ -1962,7 +2463,7 @@ app.post("/api/auth/firebase-sync", (req, res) => {
   );
   if (!user) {
     const resolvedRole = role || "customer";
-    const resolvedEmail = email || `${resolvedRole}_${uid || Date.now()}@swiftcart.com`;
+    const resolvedEmail = email || `${resolvedRole}_${uid || Date.now()}@dailymart.com`;
     const resolvedName = name || resolvedRole.charAt(0).toUpperCase() + resolvedRole.slice(1) + " " + (cleanPhone ? cleanPhone.slice(-4) : "User");
     user = {
       id: "u_" + Date.now() + "_" + Math.floor(Math.random() * 1e3),
@@ -2320,7 +2821,7 @@ app.post("/api/auth/verify-otp", (req, res) => {
   }
   if (!user) {
     const resolvedRole = phone === "7032865951" || phone === "7032865110" ? "admin" : "customer";
-    const resolvedEmail = email || `customer_${phone}@swiftcart.com`;
+    const resolvedEmail = email || `customer_${phone}@dailymart.com`;
     const resolvedName = name || "Customer " + phone.slice(-4);
     user = {
       id: "u_" + Date.now() + "_" + Math.floor(Math.random() * 1e3),
@@ -3250,7 +3751,7 @@ app.put("/api/role-requests/:id/review", async (req, res) => {
       if (!targetUser) {
         targetUser = {
           id: "u_" + Date.now() + "_" + Math.floor(Math.random() * 1e3),
-          email: `${request.targetRole}_${userToElevate.phone || Date.now()}@swiftcart.com`,
+          email: `${request.targetRole}_${userToElevate.phone || Date.now()}@dailymart.com`,
           phone: userToElevate.phone,
           password: userToElevate.password || "secure_pass_onboarded",
           role: request.targetRole,
@@ -3311,7 +3812,7 @@ app.put("/api/role-requests/:id/review", async (req, res) => {
       userId: request.userId,
       recipientRole: request.targetRole === "seller" ? "seller" : request.targetRole === "rider" ? "rider" : "customer",
       title: status === "approved" ? "Application Approved! \u{1F389}" : "Application Reviewed \u26A0\uFE0F",
-      message: status === "approved" ? `Congratulations! Your SwiftCart ${request.targetRole.toUpperCase()} application has been approved.` : `Your SwiftCart application was reviewed. Status: Rejected. Reason: ${request.rejectionReason}`,
+      message: status === "approved" ? `Congratulations! Your Daily Mart ${request.targetRole.toUpperCase()} application has been approved.` : `Your Daily Mart application was reviewed. Status: Rejected. Reason: ${request.rejectionReason}`,
       category: "systemAlerts",
       actionUrl: "/profile"
     });
@@ -3469,7 +3970,7 @@ app.get("/api/supabase/status", async (req, res) => {
         ref: tokenRef || "Unknown",
         isMismatch: false
       },
-      message: "Established premium real-time connection to Supabase! SwiftCart logs live dispatch states to your cloud datastore."
+      message: "Established premium real-time connection to Supabase! Daily Mart logs live dispatch states to your cloud datastore."
     });
   } catch (err) {
     console.error("[SUPABASE CONNECTION ERROR]", err);
@@ -3559,6 +4060,14 @@ app.delete("/api/restaurant-categories/:id", async (req, res) => {
 });
 app.get("/api/restaurants", async (req, res) => {
   const { categoryId } = req.query;
+  const cacheKey = `restaurants_${categoryId || "all"}`;
+  const queryStartTime = Date.now();
+  const cachedData = apiCache.get(cacheKey);
+  if (cachedData) {
+    console.log(`\u26A1 [CACHE HIT] Serving restaurants from in-memory TTL/LRU store for key: "${cacheKey}" under 1ms.`);
+    return res.json(cachedData);
+  }
+  console.log(`\u23F1\uFE0F [CACHE MISS] Querying database of record for key: "${cacheKey}"`);
   if (pgPool) {
     try {
       let queryStr = "SELECT * FROM restaurants ORDER BY created_at ASC";
@@ -3586,7 +4095,8 @@ app.get("/api/restaurants", async (req, res) => {
       } else {
         db.restaurants = mapped;
       }
-      saveDatabase(db);
+      saveDatabase(db, "restaurants");
+      apiCache.set(cacheKey, mapped, void 0, queryStartTime);
       return res.json(mapped);
     } catch (err) {
       console.error("[DATABASE] Error reading restaurants from Postgres:", err.message || err);
@@ -3596,6 +4106,7 @@ app.get("/api/restaurants", async (req, res) => {
   if (categoryId) {
     list = list.filter((r) => r.categoryId === categoryId);
   }
+  apiCache.set(cacheKey, list, void 0, queryStartTime);
   res.json(list);
 });
 app.post("/api/restaurants", async (req, res) => {
@@ -3836,8 +4347,245 @@ app.delete("/api/restaurant-products/:id", async (req, res) => {
   saveDatabase(db);
   res.json({ success: true });
 });
+app.get("/api/hostels", async (req, res) => {
+  if (pgPool) {
+    try {
+      const { rows } = await pgPool.query("SELECT * FROM hostels ORDER BY created_at ASC");
+      const mapped = rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        image: r.image,
+        address: r.address || "",
+        phone: r.phone || "",
+        isActive: r.is_active !== false,
+        createdAt: r.created_at ? typeof r.created_at === "string" ? r.created_at : r.created_at.toISOString() : (/* @__PURE__ */ new Date()).toISOString()
+      }));
+      db.hostels = mapped;
+      saveDatabase(db);
+      return res.json(mapped);
+    } catch (err) {
+      console.error("[DATABASE] Error reading hostels from Postgres:", err.message || err);
+    }
+  }
+  res.json(db.hostels || []);
+});
+app.post("/api/hostels", async (req, res) => {
+  const { name, image, address, phone, isActive } = req.body;
+  if (!name) return res.status(400).json({ error: "Name is required" });
+  const newHostel = {
+    id: `h_${Date.now()}`,
+    name,
+    image: image || "https://images.unsplash.com/photo-1555854817-2b2260177747?auto=format&fit=crop&q=80&w=200",
+    address: address || "",
+    phone: phone || "",
+    isActive: isActive !== false,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (pgPool) {
+    try {
+      await pgPool.query(
+        "INSERT INTO hostels (id, name, image, address, phone, is_active, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        [newHostel.id, newHostel.name, newHostel.image, newHostel.address, newHostel.phone, newHostel.isActive, newHostel.createdAt]
+      );
+    } catch (err) {
+      console.error("[DATABASE] Error storing hostel in Postgres:", err.message || err);
+    }
+  }
+  db.hostels = db.hostels || [];
+  db.hostels.push(newHostel);
+  saveDatabase(db);
+  res.json(newHostel);
+});
+app.delete("/api/hostels/:id", async (req, res) => {
+  const { id } = req.params;
+  if (pgPool) {
+    try {
+      await pgPool.query("DELETE FROM tiffin_items WHERE hostel_id = $1", [id]);
+      await pgPool.query("DELETE FROM tiffin_categories WHERE hostel_id = $1", [id]);
+      await pgPool.query("DELETE FROM hostels WHERE id = $1", [id]);
+    } catch (err) {
+      console.error("[DATABASE] Error deleting hostel from Postgres:", err.message || err);
+    }
+  }
+  db.hostels = (db.hostels || []).filter((h) => h.id !== id);
+  db.tiffinCategories = (db.tiffinCategories || []).filter((c) => c.hostelId !== id);
+  db.tiffinItems = (db.tiffinItems || []).filter((i) => i.hostelId !== id);
+  saveDatabase(db);
+  res.json({ success: true });
+});
+app.get("/api/tiffin-categories", async (req, res) => {
+  const { hostelId } = req.query;
+  if (pgPool) {
+    try {
+      let queryStr = "SELECT * FROM tiffin_categories ORDER BY created_at ASC";
+      let params = [];
+      if (hostelId) {
+        queryStr = "SELECT * FROM tiffin_categories WHERE hostel_id = $1 ORDER BY created_at ASC";
+        params = [hostelId];
+      }
+      const { rows } = await pgPool.query(queryStr, params);
+      const mapped = rows.map((r) => ({
+        id: r.id,
+        hostelId: r.hostel_id,
+        name: r.name,
+        createdAt: r.created_at ? typeof r.created_at === "string" ? r.created_at : r.created_at.toISOString() : (/* @__PURE__ */ new Date()).toISOString()
+      }));
+      if (hostelId) {
+        db.tiffinCategories = (db.tiffinCategories || []).filter((c) => c.hostelId !== hostelId).concat(mapped);
+      } else {
+        db.tiffinCategories = mapped;
+      }
+      saveDatabase(db);
+      return res.json(mapped);
+    } catch (err) {
+      console.error("[DATABASE] Error reading tiffin-categories from Postgres:", err.message || err);
+    }
+  }
+  let list = db.tiffinCategories || [];
+  if (hostelId) {
+    list = list.filter((c) => c.hostelId === hostelId);
+  }
+  res.json(list);
+});
+app.post("/api/tiffin-categories", async (req, res) => {
+  const { hostelId, name } = req.body;
+  if (!hostelId || !name) return res.status(400).json({ error: "hostelId and name are required" });
+  const newCat = {
+    id: `tc_${Date.now()}`,
+    hostelId,
+    name,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (pgPool) {
+    try {
+      await pgPool.query(
+        "INSERT INTO tiffin_categories (id, hostel_id, name, created_at) VALUES ($1, $2, $3, $4)",
+        [newCat.id, newCat.hostelId, newCat.name, newCat.createdAt]
+      );
+    } catch (err) {
+      console.error("[DATABASE] Error storing tiffin-category in Postgres:", err.message || err);
+    }
+  }
+  db.tiffinCategories = db.tiffinCategories || [];
+  db.tiffinCategories.push(newCat);
+  saveDatabase(db);
+  res.json(newCat);
+});
+app.delete("/api/tiffin-categories/:id", async (req, res) => {
+  const { id } = req.params;
+  if (pgPool) {
+    try {
+      await pgPool.query("DELETE FROM tiffin_items WHERE tiffin_category_id = $1", [id]);
+      await pgPool.query("DELETE FROM tiffin_categories WHERE id = $1", [id]);
+    } catch (err) {
+      console.error("[DATABASE] Error deleting tiffin-category from Postgres:", err.message || err);
+    }
+  }
+  db.tiffinCategories = (db.tiffinCategories || []).filter((c) => c.id !== id);
+  db.tiffinItems = (db.tiffinItems || []).filter((i) => i.tiffinCategoryId !== id);
+  saveDatabase(db);
+  res.json({ success: true });
+});
+app.get("/api/tiffin-items", async (req, res) => {
+  const { hostelId, tiffinCategoryId } = req.query;
+  if (pgPool) {
+    try {
+      let queryStr = "SELECT * FROM tiffin_items ORDER BY created_at ASC";
+      let params = [];
+      if (tiffinCategoryId) {
+        queryStr = "SELECT * FROM tiffin_items WHERE tiffin_category_id = $1 ORDER BY created_at ASC";
+        params = [tiffinCategoryId];
+      } else if (hostelId) {
+        queryStr = "SELECT * FROM tiffin_items WHERE hostel_id = $1 ORDER BY created_at ASC";
+        params = [hostelId];
+      }
+      const { rows } = await pgPool.query(queryStr, params);
+      const mapped = rows.map((r) => ({
+        id: r.id,
+        hostelId: r.hostel_id,
+        tiffinCategoryId: r.tiffin_category_id,
+        name: r.name,
+        price: r.price ? Number(r.price) : 0,
+        description: r.description || "",
+        image: r.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=120",
+        isAvailable: r.is_available !== false,
+        createdAt: r.created_at ? typeof r.created_at === "string" ? r.created_at : r.created_at.toISOString() : (/* @__PURE__ */ new Date()).toISOString()
+      }));
+      if (tiffinCategoryId) {
+        db.tiffinItems = (db.tiffinItems || []).filter((i) => i.tiffinCategoryId !== tiffinCategoryId).concat(mapped);
+      } else if (hostelId) {
+        db.tiffinItems = (db.tiffinItems || []).filter((i) => i.hostelId !== hostelId).concat(mapped);
+      } else {
+        db.tiffinItems = mapped;
+      }
+      saveDatabase(db);
+      return res.json(mapped);
+    } catch (err) {
+      console.error("[DATABASE] Error reading tiffin-items from Postgres:", err.message || err);
+    }
+  }
+  let list = db.tiffinItems || [];
+  if (tiffinCategoryId) {
+    list = list.filter((i) => i.tiffinCategoryId === tiffinCategoryId);
+  } else if (hostelId) {
+    list = list.filter((i) => i.hostelId === hostelId);
+  }
+  res.json(list);
+});
+app.post("/api/tiffin-items", async (req, res) => {
+  const { hostelId, tiffinCategoryId, name, price, description, image, isAvailable } = req.body;
+  if (!hostelId || !tiffinCategoryId || !name || price === void 0) {
+    return res.status(400).json({ error: "hostelId, tiffinCategoryId, name, and price are required" });
+  }
+  const newItem = {
+    id: `ti_${Date.now()}`,
+    hostelId,
+    tiffinCategoryId,
+    name,
+    price: Number(price),
+    description: description || "",
+    image: image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=120",
+    isAvailable: isAvailable !== false,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (pgPool) {
+    try {
+      await pgPool.query(
+        "INSERT INTO tiffin_items (id, hostel_id, tiffin_category_id, name, price, description, image, is_available, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        [newItem.id, newItem.hostelId, newItem.tiffinCategoryId, newItem.name, newItem.price, newItem.description, newItem.image, newItem.isAvailable, newItem.createdAt]
+      );
+    } catch (err) {
+      console.error("[DATABASE] Error storing tiffin-item in Postgres:", err.message || err);
+    }
+  }
+  db.tiffinItems = db.tiffinItems || [];
+  db.tiffinItems.push(newItem);
+  saveDatabase(db);
+  res.json(newItem);
+});
+app.delete("/api/tiffin-items/:id", async (req, res) => {
+  const { id } = req.params;
+  if (pgPool) {
+    try {
+      await pgPool.query("DELETE FROM tiffin_items WHERE id = $1", [id]);
+    } catch (err) {
+      console.error("[DATABASE] Error deleting tiffin-item from Postgres:", err.message || err);
+    }
+  }
+  db.tiffinItems = (db.tiffinItems || []).filter((i) => i.id !== id);
+  saveDatabase(db);
+  res.json({ success: true });
+});
 app.get("/api/products", async (req, res) => {
   const { category, sellerId } = req.query;
+  const cacheKey = `products_${category || "all"}_${sellerId || "all"}`;
+  const queryStartTime = Date.now();
+  const cachedData = apiCache.get(cacheKey);
+  if (cachedData) {
+    console.log(`\u26A1 [CACHE HIT] Serving products from in-memory TTL/LRU store for key: "${cacheKey}" under 1ms.`);
+    return res.json(cachedData);
+  }
+  console.log(`\u23F1\uFE0F [CACHE MISS] Querying database of record for key: "${cacheKey}"`);
   if (serverSupabase) {
     try {
       console.log("[SUPABASE PRODUCTS] Fetching products from Supabase...");
@@ -3885,6 +4633,7 @@ app.get("/api/products", async (req, res) => {
         if (sellerId) {
           filteredList = filteredList.filter((p) => p.sellerId === sellerId);
         }
+        apiCache.set(cacheKey, filteredList, void 0, queryStartTime);
         return res.json(filteredList);
       } else {
         if (error) {
@@ -3904,6 +4653,7 @@ app.get("/api/products", async (req, res) => {
   if (sellerId) {
     list = list.filter((p) => p.sellerId === sellerId);
   }
+  apiCache.set(cacheKey, list, void 0, queryStartTime);
   res.json(list);
 });
 app.post("/api/products", async (req, res) => {
@@ -4270,7 +5020,7 @@ app.post("/api/orders", (req, res) => {
       recipientName: sellerNameResolved,
       recipientPhone: sellerPhoneResolved,
       channel: "sms",
-      message: `\u{1F514} Alert: New Order received on SwiftCart! Order ID: #${newOrder.id}. Customer: ${newOrder.customerName}. Total: \u20B9${newOrder.total}. View details on your Seller Dashboard and pack the items!`,
+      message: `\u{1F514} Alert: New Order received on Daily Mart! Order ID: #${newOrder.id}. Customer: ${newOrder.customerName}. Total: \u20B9${newOrder.total}. View details on your Seller Dashboard and pack the items!`,
       status: "sent",
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
     });
@@ -4281,7 +5031,7 @@ app.post("/api/orders", (req, res) => {
       recipientName: sellerNameResolved,
       recipientPhone: sellerPhoneResolved,
       channel: "whatsapp",
-      message: `\u{1F4F1} *SwiftCart Business Hub* \u{1F4F1}
+      message: `\u{1F4F1} *Daily Mart Business Hub* \u{1F4F1}
 
 Hello *${sellerNameResolved}*,
 
@@ -4313,7 +5063,7 @@ You have received a new customer order!
       recipientName: "Super Admin",
       recipientPhone: adminPhoneResolved,
       channel: "whatsapp",
-      message: `\u{1F451} *SwiftCart Admin Panel* \u{1F451}
+      message: `\u{1F451} *Daily Mart Admin Panel* \u{1F451}
 
 New order transaction accomplished!
 \u{1F194} *OrderID:* #${newOrder.id}
@@ -4564,13 +5314,13 @@ try {
 }
 async function runDatabaseBackup() {
   const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
-  const filename = `swiftcart_backup_${timestamp}.json`;
+  const filename = `dailymart_backup_${timestamp}.json`;
   const backupPath = import_path.default.join(BACKUP_DIR, filename);
   const backupData = {
     metadata: {
       version: "1.2",
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      engine: "SwiftCart Core Node Engine",
+      engine: "Daily Mart Core Node Engine",
       storageType: serverSupabase ? "PostgreSQL Hybrid Sync" : "JSON Local Persistence"
     },
     data: {
@@ -4595,7 +5345,7 @@ async function runDatabaseBackup() {
   console.log(`\u{1F4BE} [BACKUP ENGINE] Auto-backup successfully written: ${filename}`);
   try {
     const files = import_fs.default.readdirSync(BACKUP_DIR);
-    const backupFiles = files.filter((f) => f.startsWith("swiftcart_backup_") && f.endsWith(".json")).map((f) => ({ name: f, time: import_fs.default.statSync(import_path.default.join(BACKUP_DIR, f)).mtime.getTime() })).sort((a, b) => b.time - a.time);
+    const backupFiles = files.filter((f) => f.startsWith("dailymart_backup_") && f.endsWith(".json")).map((f) => ({ name: f, time: import_fs.default.statSync(import_path.default.join(BACKUP_DIR, f)).mtime.getTime() })).sort((a, b) => b.time - a.time);
     if (backupFiles.length > 7) {
       for (let i = 7; i < backupFiles.length; i++) {
         import_fs.default.unlinkSync(import_path.default.join(BACKUP_DIR, backupFiles[i].name));
@@ -4624,7 +5374,7 @@ app.get("/api/backup/list", async (req, res) => {
     if (!import_fs.default.existsSync(BACKUP_DIR)) {
       return res.json([]);
     }
-    const files = import_fs.default.readdirSync(BACKUP_DIR).filter((f) => f.startsWith("swiftcart_backup_") && f.endsWith(".json")).map((f) => {
+    const files = import_fs.default.readdirSync(BACKUP_DIR).filter((f) => f.startsWith("dailymart_backup_") && f.endsWith(".json")).map((f) => {
       const stats = import_fs.default.statSync(import_path.default.join(BACKUP_DIR, f));
       return {
         filename: f,
@@ -4933,7 +5683,7 @@ app.get("/api/sellers", async (req, res) => {
           const storeName = su.storeName || su.store_name || su.name || "Quick Merchant";
           const ownerName = su.name || "Vendor Partner";
           const phone = su.phone || "9999999999";
-          const email = su.email || `vendor_${shortId}@swiftcart.com`;
+          const email = su.email || `vendor_${shortId}@dailymart.com`;
           const address = su.address || "Standard Registered Zone";
           const status = su.status || "approved";
           const createdAt = su.created_at || su.createdAt || (/* @__PURE__ */ new Date()).toISOString();
@@ -5210,7 +5960,7 @@ app.get("/api/riders", async (req, res) => {
           const existingUserIdx = db.users.findIndex((u) => u.id === suId || su.email && u.email === su.email || su.phone && u.phone === su.phone);
           const userPayload = {
             id: suId,
-            email: su.email || `rider_${shortId}@swiftcart.com`,
+            email: su.email || `rider_${shortId}@dailymart.com`,
             phone,
             role: "rider",
             name,
@@ -5503,6 +6253,7 @@ async function startServer() {
     db = deduplicateAndScrubDb(db);
     saveDatabase(db);
   }
+  bootstrapRealtimeCacheSync();
   try {
     const configPath = import_path.default.join(process.cwd(), "firebase-applet-config.json");
     let isFirebaseConfigured = false;
@@ -5512,7 +6263,7 @@ async function startServer() {
     const activeTokens = (db.users || []).filter((u) => u.fcmToken).length;
     console.log(`
 ======================================================================
-\u{1F4E1} SWIFTCART FCM SYSTEM STATUS REPORT:
+\u{1F4E1} DAILY MART FCM SYSTEM STATUS REPORT:
 - FCM Enabled: ${isFirebaseConfigured ? "TRUE" : "FALSE"}
 - Firebase Connected: ${isFirebaseConfigured ? "TRUE" : "FALSE"}
 - Active Registered FCM Count/Tokens: ${activeTokens} devices synchronized
@@ -5535,20 +6286,30 @@ async function startServer() {
     });
   }
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[SWIFT CART] Live at http://localhost:${PORT}`);
+    console.log(`[DAILY MART] Live at http://localhost:${PORT}`);
   });
 }
 startServer();
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  InMemoryLRUTtlCache,
+  SimpleMutex,
+  acquireDistributedLock,
+  advanceSystemSequenceEpoch,
+  apiCache,
+  bootstrapRealtimeCacheSync,
   broadcastPromoNotification,
   checkAndLogLowStock,
   generateJWT,
   getAuthUser,
   getOrHydrateUserById,
+  invalidateCacheForTable,
+  releaseDistributedLock,
   sanitizeSupabaseKey,
   sanitizeSupabaseUrl,
   sendFCMNotification,
-  verifyJWT
+  systemSequenceEpoch,
+  verifyJWT,
+  writeMutex
 });
 //# sourceMappingURL=server.cjs.map

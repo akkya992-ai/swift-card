@@ -1,6 +1,6 @@
 {
-  "name": "BlinkStore Express Grocery",
-  "short_name": "BlinkStore",
+  "name": "Daily Mart Express Grocery",
+  "short_name": "Daily Mart",
   "description": "Instant grocery ordering from high-sanitation dark stores with lightning-fast 10-minute cargo delivery.",
   "start_url": "/",
   "display": "standalone",

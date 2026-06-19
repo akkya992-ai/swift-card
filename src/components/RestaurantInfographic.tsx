@@ -46,12 +46,12 @@ export default function RestaurantInfographic() {
   return (
     <div className="bg-slate-50 border border-slate-200/60 rounded-[32px] p-6 md:p-8 space-y-8 shadow-xs w-full max-w-7xl mx-auto selection:bg-emerald-100 animate-fade-in">
       
-      {/* Header section with Swift Cart Branding and Context */}
+      {/* Header section with Daily Mart Branding and Context */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 bg-emerald-600 text-white rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm shadow-emerald-950/25">
-              Swift Cart architecture
+              Daily Mart architecture
             </span>
             <div className="flex items-center gap-1 text-[11px] text-[#00A86B] font-bold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -105,7 +105,7 @@ export default function RestaurantInfographic() {
               {/* Screen Header */}
               <div className="p-3 border-b border-slate-100 space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="font-black text-xs text-slate-800 tracking-tight">Swift Cart Delivery</span>
+                  <span className="font-black text-xs text-slate-800 tracking-tight">Daily Mart Delivery</span>
                   <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">10 Min</span>
                 </div>
                 <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1.5">
@@ -493,7 +493,7 @@ export default function RestaurantInfographic() {
               Step {activeStep} Walkthrough Details
             </h4>
             <div className="text-[11px] text-emerald-800 font-medium leading-relaxed">
-              {activeStep === 1 && "The Home Page provides access to standard delivery sections. In Swift Cart's scalable marketplace system, we introduce a beautiful highlighted category card for Restaurants. Clicking this triggers the downstream lookup tree."}
+              {activeStep === 1 && "The Home Page provides access to standard delivery sections. In Daily Mart's scalable marketplace system, we introduce a beautiful highlighted category card for Restaurants. Clicking this triggers the downstream lookup tree."}
               {activeStep === 2 && "The Restaurant Categories show groupings defined by Admin (e.g., bakeries, fast food, healthy joints). This categorizer dynamically maps store items in database.json and allows sellers to categorize their shopfront."}
               {activeStep === 3 && "The Restaurants List presents dynamic seller accounts. These sellers register via onboarding flows and are authorized by the Admin to start publishing products under the parent category."}
               {activeStep === 4 && "The Menu Categories partition products (such as Starters, Main Course, Shakes, Sides). Having distinct groupings improves visual flow and conversion, keeping list navigation compact and structured."}
@@ -513,7 +513,7 @@ export default function RestaurantInfographic() {
       <div className="bg-slate-900 text-slate-100 rounded-3xl p-6 md:p-8 space-y-6">
         <div>
           <h4 className="text-sm font-black uppercase tracking-wider text-emerald-400">
-            Swift Cart Hierarchy Diagram
+            Daily Mart Hierarchy Diagram
           </h4>
           <p className="text-slate-400 text-xs mt-1">
             Dynamic data schema flow from entry point down to actionable products:

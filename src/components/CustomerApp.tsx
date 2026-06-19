@@ -59,7 +59,10 @@ import CheckoutPage from './CheckoutPage';
 import WishlistPage from './WishlistPage';
 import RestaurantInfographic from './RestaurantInfographic';
 import RestaurantCustomerFlow from './RestaurantCustomerFlow';
+import TiffinCustomerFlow from './TiffinCustomerFlow';
 import { supabase, isSupabaseConfigured } from '../supabase';
+// @ts-ignore
+import dailyMartLogo from '../assets/images/daily_mart_green_logo_1781598237470.jpg';
 
 interface CustomerAppProps {
   userProfile: any;
@@ -146,6 +149,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
     maskedUrl?: string;
     message: string;
     statusCode?: number;
+    diagnostics?: any;
   } | null>(null);
   const [supabaseStatusLoading, setSupabaseStatusLoading] = useState(false);
 
@@ -266,7 +270,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
   const prevStatusesRef = useRef<Record<string, string>>({});
 
   // Tab management (Expanded for granular premium page routings)
-  const [activeTab, setActiveTab] = useState<'home' | 'categories' | 'orders' | 'profile' | 'wishlist' | 'checkout' | 'live-tracking' | 'addresses' | 'product-details' | 'cart'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'categories' | 'category' | 'orders' | 'profile' | 'wishlist' | 'checkout' | 'live-tracking' | 'addresses' | 'product-details' | 'cart' | 'ai-planner'>('home');
   const [orderFilterType, setOrderFilterType] = useState<'all' | 'pending' | 'packed' | 'out_for_delivery' | 'delivered' | 'tiffin'>('all');
 
   // Shimmer effect loading states
@@ -345,7 +349,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                   try {
                     new Notification(notif.title, {
                       body: notif.body || notif.message.replace(`${notif.title}: `, ''),
-                      tag: 'swiftcart-' + notif.id
+                      tag: 'dailymart-' + notif.id
                     });
                   } catch (err) {}
                 }
@@ -526,7 +530,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
     setTimeout(() => {
       triggerPushNotification(
         "Welcome Back! 👋", 
-        `Logged in securely to 10-MIN blinkit cargo! Grab discount using coupon "FAST50"`, 
+        `Logged in securely to 10-MIN Daily Mart cargo! Grab discount using coupon "FAST50"`, 
         'info'
       );
     }, 2000);
@@ -1002,7 +1006,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
     try {
       const orderPayload = {
         customerPhone: userProfile?.phone || '+91 9999911111',
-        customerEmail: userProfile?.email || 'customer@swiftcart.com',
+        customerEmail: userProfile?.email || 'customer@dailymart.com',
         customerUid: userProfile?.firebaseUid || userProfile?.id || '',
         customerName: userProfile?.name || 'Valued Resident Customer',
         items: cart,
@@ -1268,10 +1272,17 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
             {/* Logo name branding (keeping simple & direct context) */}
             <div 
               onClick={handleLogoClick}
-              className="hidden md:flex items-center gap-1.5 cursor-pointer select-none"
+              className="hidden md:flex items-center gap-2 cursor-pointer select-none"
             >
-              <ShoppingBag className="w-6 h-6 text-white animate-pulse" />
-              <span className="font-black text-sm tracking-tighter uppercase font-sans">BlinkStore 10-MIN</span>
+              <div className="w-7 h-7 rounded-lg overflow-hidden border border-emerald-500 bg-white">
+                <img 
+                  src={dailyMartLogo} 
+                  alt="Daily Mart logo" 
+                  className="w-full h-full object-cover" 
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <span className="font-black text-sm tracking-tighter uppercase font-sans">Daily Mart 10-MIN</span>
             </div>
 
             {/* Delivery pinpoint selector indicator */}
@@ -1951,6 +1962,15 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                     getProductQuantity={getProductQuantity}
                   />
                 </div>
+              ) : selectedCategory === 'tiffin' ? (
+                <div className="mt-2">
+                  <TiffinCustomerFlow 
+                    cart={cart}
+                    handleAddToCart={handleAddToCart}
+                    handleRemoveFromCart={handleRemoveFromCart}
+                    getProductQuantity={getProductQuantity}
+                  />
+                </div>
               ) : filteredProducts.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 space-y-1">
                   <XCircle className="w-10 h-10 mx-auto" />
@@ -2240,7 +2260,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
               >
                 <ArrowLeft className="w-4 h-4" /> Keep Shopping
               </button>
-              <h1 className="text-xs font-black text-slate-800 uppercase tracking-wiest">My Blinkit Cart</h1>
+              <h1 className="text-xs font-black text-slate-800 uppercase tracking-wiest">My Daily Mart Cart</h1>
               <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-100 px-2 py-0.5 rounded font-black font-mono">
                 {cart.reduce((sum, item) => sum + item.quantity, 0)} Items
               </span>
@@ -2672,7 +2692,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                   <span>Powered by Gemini 3.5</span>
                 </div>
                 <h2 className="font-display font-black text-2xl tracking-tight">
-                  Blink<span className="text-emerald-400">Store</span> AI Chef & Recipe Copilot
+                  Daily<span className="text-emerald-400">Mart</span> AI Chef & Recipe Copilot
                 </h2>
                 <p className="text-xs text-emerald-100 font-semibold max-w-lg">
                   Craving something gourmet in 10 minutes? Type any meal. The AI details the precise recipe and dynamically matches ingredients against real darkstore inventory for instant 1-click delivery.
@@ -3032,7 +3052,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                       👩‍🍳 CHEF PRO TIP:
                     </span>
                     <p className="text-[11px] text-amber-800 font-medium mt-1 leading-relaxed max-w-xl mx-auto font-sans">
-                      "Always prep your ingredients (mise en place) before turning on the heat. With swiftcart 10-minute instant delivery options, everything arrives ice-fresh just before you prep!"
+                      "Always prep your ingredients (mise en place) before turning on the heat. With Daily Mart 10-minute instant delivery options, everything arrives ice-fresh just before you prep!"
                     </p>
                   </div>
 
@@ -3228,7 +3248,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                   <div className="bg-gradient-to-tr from-slate-900 to-slate-800 text-white rounded-3xl p-5 border border-slate-800 shadow-lg space-y-4">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] uppercase font-black tracking-wider text-emerald-400 flex items-center gap-1.5">
-                      <Wallet className="w-4 h-4 text-emerald-500 animate-pulse" /> SwiftCart Digital Vault
+                      <Wallet className="w-4 h-4 text-emerald-500 animate-pulse" /> Daily Mart Digital Vault
                     </span>
                     <span className="text-[9px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">Secure Sync</span>
                   </div>
@@ -3351,10 +3371,10 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                   <div className="grid grid-cols-5 gap-1 text-center font-sans">
                     {[
                       { label: 'All', count: orders.length, status: 'all', icon: '📦' },
-                      { label: 'To Pay', count: orders.filter(o => o.status === 'pending').length, status: 'pending', icon: '💳' },
+                      { label: 'To Pay', count: orders.filter(o => (o.status as string) === 'pending').length, status: 'pending', icon: '💳' },
                       { label: 'Delivering', count: orders.filter(o => ['processing', 'dispatched', 'delivered'].includes(o.status) && o.status !== 'delivered').length, status: 'delivering', icon: '🛵' },
                       { label: 'Delivered', count: orders.filter(o => o.status === 'delivered').length, status: 'delivered', icon: '✅' },
-                      { label: 'Cancelled', count: orders.filter(o => o.status === 'cancelled' || o.status === 'refunded').length, status: 'cancelled', icon: '✕' }
+                      { label: 'Cancelled', count: orders.filter(o => (o.status as string) === 'cancelled' || o.status === 'refunded').length, status: 'cancelled', icon: '✕' }
                     ].map((item, idx) => (
                       <button
                         key={idx}
@@ -3715,7 +3735,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                         <span>🏪</span> Become a Business Partner
                       </h4>
                       <p className="text-[10px] text-slate-500 font-semibold leading-relaxed font-sans">
-                        Apply to sell fresh produce or join as a swift courier.
+                        Apply to sell fresh produce or join as an express courier.
                       </p>
                     </div>
 
@@ -4578,7 +4598,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                         ? window.location.origin 
                         : "https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app"
                     )}`}
-                    alt="BlinkStore Mobile App Link QR"
+                    alt="Daily Mart Mobile App Link QR"
                     className="w-36 h-36 mx-auto rounded-lg object-contain bg-white p-1 transition-transform group-hover:scale-102"
                   />
                   <div className="absolute inset-x-0 bottom-2 text-center text-[7px] text-slate-400 font-black tracking-widest uppercase leading-none opacity-0 group-hover:opacity-100 transition-opacity bg-slate-50/90 py-0.5">
@@ -4636,7 +4656,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
 
       {/* FLOATING WHATSAPP BUTTON */}
       <a
-        href="https://wa.me/917032865951?text=Hello%20BlinkStore%20Support!%20I%20have%20an%20inquiry%20regarding%20my%20order."
+        href="https://wa.me/917032865951?text=Hello%20Daily%20Mart%20Support!%20I%20have%20an%20inquiry%20regarding%20my%20order."
         target="_blank"
         rel="noopener noreferrer"
         title="Chat on WhatsApp"

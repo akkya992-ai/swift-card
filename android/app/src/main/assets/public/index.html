@@ -4,37 +4,282 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <meta name="theme-color" content="#10b981" />
-    <link rel="manifest" href="/manifest.json" />
+    <link rel="manifest" href="./manifest.json" />
     <link rel="apple-touch-icon" href="/icon.jpg" />
     
     <!-- SEO Primary Metadata -->
-    <title>Swift Cart - Express 10-Min Grocery Delivery</title>
+    <title>Daily Mart - Express 10-Min Grocery Delivery</title>
     <meta name="description" content="Instant grocery ordering from high-sanitation dark stores! Purchase organic vegetables, fresh dairy, warm bakery, snacks, and cold beverages delivered instantly in 10 minutes on secure e-bikes." />
-    <meta name="keywords" content="swift cart, online grocery delivery, blinkit, zepto, quick commerce india, telangana 10 min delivery, buy milk online, organic fruits and vegetables" />
+    <meta name="keywords" content="daily mart, online grocery delivery, blinkit, zepto, quick commerce india, telangana 10 min delivery, buy milk online, organic fruits and vegetables" />
     <meta name="robots" content="index, follow" />
-    <meta name="author" content="Swift Cart Inc." />
+    <meta name="author" content="Daily Mart Inc." />
     
     <!-- Open Graph / Facebook Social Previews -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Swift Cart - Express 10-Min Grocery Delivery Network" />
+    <meta property="og:title" content="Daily Mart - Express 10-Min Grocery Delivery Network" />
     <meta property="og:description" content="Instant grocery ordering from high-sanitation dark stores! Purchase organic vegetables, fresh dairy, bakery, snacks, and fruits on eco-friendly e-bikes." />
-    <meta property="og:url" content="https://swiftcart-delivery.vercel.app/" />
+    <meta property="og:url" content="https://dailymart-delivery.vercel.app/" />
     <meta property="og:image" content="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=600" />
     
     <!-- Twitter Social Cards -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Swift Cart - Express 10-Min Grocery Delivery" />
+    <meta name="twitter:title" content="Daily Mart - Express 10-Min Grocery Delivery" />
     <meta name="twitter:description" content="Instant grocery ordering from high-sanitation dark stores! Fresh food and snacks delivered in 10 minutes." />
     <meta name="twitter:image" content="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=600" />
 
     <!-- Favicon Placeholders -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
-    <link rel="canonical" href="https://swiftcart-delivery.vercel.app/" />
-    <script type="module" crossorigin src="/assets/index-BBcKuaPU.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-B0tiI6UG.css">
+    <link rel="canonical" href="https://dailymart-delivery.vercel.app/" />
+
+    <!-- Pure JS System Diagnostics Initializer -->
+    <script>
+      (function() {
+        window.__diagnosticLogs = [];
+        window.__addDiagnosticLog = function(type, msg, meta) {
+          var entry = {
+            time: new Date().toLocaleTimeString(),
+            type: type,
+            message: msg || '',
+            meta: meta || null
+          };
+          window.__diagnosticLogs.push(entry);
+          
+          // Propagate to actual log list if defined
+          var listEl = document.getElementById('dm-diag-list');
+          if (listEl) {
+            var logDiv = document.createElement('div');
+            logDiv.style.borderLeft = '3px solid ' + (type === 'error' ? '#ef4444' : type === 'warn' ? '#f59e0b' : '#10b981');
+            logDiv.style.paddingLeft = '8px';
+            logDiv.style.marginBottom = '2px';
+            logDiv.style.color = type === 'error' ? '#fca5a5' : type === 'warn' ? '#fde047' : '#cbd5e1';
+            
+            var metaString = '';
+            if (meta) {
+              try { metaString = '\n' + JSON.stringify(meta, null, 2); } catch(e) {}
+            }
+            
+            logDiv.innerHTML = '<span style="color:#64748b;font-weight:600;">[' + entry.time + ']</span> <span style="font-weight:bold;text-transform:uppercase;">[' + type + ']</span> ' + 
+                               entry.message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + 
+                               (metaString ? '<pre style="margin: 4px 0 0 0; background:rgba(0,0,0,0.3); padding:4px; border-radius:4px; font-size:10px; color:#94a3b8; overflow-x:auto;">' + metaString + '</pre>' : '');
+            
+            listEl.appendChild(logDiv);
+            listEl.scrollTop = listEl.scrollHeight;
+          }
+        };
+
+        // Capture unhandled errors before React starts
+        window.onerror = function(message, source, lineno, colno, error) {
+          window.__addDiagnosticLog('error', 'Uncaught Script Error: ' + message, {
+            source: source,
+            line: lineno,
+            column: colno,
+            stack: error ? error.stack : 'N/A'
+          });
+          // Pulse the Diags button red to hint at fatal failure
+          var triggerEl = document.getElementById('dm-diag-trigger');
+          if (triggerEl) {
+            triggerEl.style.background = 'rgba(239, 68, 68, 0.4)';
+            triggerEl.style.borderColor = 'rgba(239, 68, 68, 1)';
+            triggerEl.style.color = '#ef4444';
+            triggerEl.innerHTML = '⚡ Errors Detected';
+          }
+        };
+
+        window.onunhandledrejection = function(event) {
+          window.__addDiagnosticLog('error', 'Unhandled Rejection: ' + (event.reason ? event.reason.message || event.reason : 'Unknown rejection'), {
+            reason: event.reason ? (event.reason.stack || event.reason) : 'N/A'
+          });
+          var triggerEl = document.getElementById('dm-diag-trigger');
+          if (triggerEl) {
+            triggerEl.style.background = 'rgba(239, 68, 68, 0.4)';
+            triggerEl.style.borderColor = 'rgba(239, 68, 68, 1)';
+            triggerEl.style.color = '#ef4444';
+            triggerEl.innerHTML = '⚡ Errors Detected';
+          }
+        };
+
+        // Capture console outputs elegantly
+        var originalConsoleError = console.error;
+        console.error = function() {
+          var args = Array.prototype.slice.call(arguments);
+          var msg = args.map(function(arg) {
+            if (arg instanceof Error) return arg.message + '\n' + arg.stack;
+            if (typeof arg === 'object') { try { return JSON.stringify(arg); } catch(e) { return String(arg); } }
+            return String(arg);
+          }).join(' ');
+          window.__addDiagnosticLog('error', msg);
+          originalConsoleError.apply(console, arguments);
+        };
+
+        var originalConsoleWarn = console.warn;
+        console.warn = function() {
+          var args = Array.prototype.slice.call(arguments);
+          var msg = args.map(function(arg) {
+            if (typeof arg === 'object') { try { return JSON.stringify(arg); } catch(e) { return String(arg); } }
+            return String(arg);
+          }).join(' ');
+          window.__addDiagnosticLog('warn', msg);
+          originalConsoleWarn.apply(console, arguments);
+        };
+
+        window.__addDiagnosticLog('info', 'System diagnostics initialized', {
+          userAgent: navigator.userAgent,
+          href: window.location.href,
+          origin: window.location.origin,
+          protocol: window.location.protocol
+        });
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-C_wXq8SQ.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-D3SAqUDN.css">
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Diagnostic Panel Overlay -->
+    <div id="dm-diag-panel" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 999998; background: rgba(15, 23, 42, 0.98); color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 20px; overflow-y: auto; box-sizing: border-box; flex-direction: column; opacity: 0; transition: opacity 0.25s ease-in-out;" class="dm-overlay">
+      <div style="flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; margin-bottom: 16px;">
+        <div>
+          <h2 style="margin: 0; font-size: 16px; font-weight: 800; color: #10b981; letter-spacing: -0.025em; display: flex; align-items: center; gap: 6px;">
+            <span>⚡</span> Daily Mart System Initialization Diagnostics
+          </h2>
+          <p style="margin: 4px 0 0 0; font-size: 11px; color: #94a3b8;">Inspect live bundle issues, routing state, or override sandbox backend addresses.</p>
+        </div>
+        <button onclick="window.__toggleDiagnosticPanel()" style="background: rgba(255,255,255,0.1); border: none; color: #f8fafc; padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; transition: background 0.15s;">✕ Close</button>
+      </div>
+
+      <!-- Quick Environment Badges -->
+      <div style="flex-shrink: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 16px;">
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); padding: 10px; border-radius: 12px;">
+          <div style="font-size: 9px; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-bottom: 2px;">Environment</div>
+          <div id="dm-diag-env" style="font-size: 12px; font-family: monospace; font-weight: 700; color: #10b981;">Checking...</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); padding: 10px; border-radius: 12px;">
+          <div style="font-size: 9px; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-bottom: 2px;">LocalStorage Server</div>
+          <div id="dm-diag-api-override" style="font-size: 11px; font-family: monospace; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; color: #e2e8f0; font-weight: bold;">None</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); padding: 10px; border-radius: 12px;">
+          <div style="font-size: 9px; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-bottom: 2px;">Connection Protocol</div>
+          <div id="dm-diag-protocol" style="font-size: 11px; font-family: monospace; color: #e2e8f0; font-weight: bold;">Checking...</div>
+        </div>
+      </div>
+
+      <!-- Action Utilities -->
+      <div style="flex-shrink: 0; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 16px;">
+        <button onclick="window.__clearDiagCache()" style="background: #ef4444; color: white; border: none; padding: 10px 16px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; flex-grow: 1; min-width: 150px; transition: opacity 0.15s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🧹 Clear Local Cache & Reset</button>
+        <button onclick="window.__promptApiOverride()" style="background: #3b82f6; color: white; border: none; padding: 10px 16px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; flex-grow: 1; min-width: 150px; transition: opacity 0.15s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🌐 Override Remote Server URL</button>
+        <button onclick="window.location.reload(true)" style="background: #10b981; color: white; border: none; padding: 10px 16px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; flex-grow: 1; min-width: 150px; transition: opacity 0.15s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">🔄 Reload App</button>
+        <button onclick="window.__dumpLogsAlert()" style="background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(255,255,255,0.15); padding: 10px 16px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; flex-grow: 1; min-width: 150px; transition: opacity 0.15s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">📤 Copy/Alert Full Logs</button>
+      </div>
+
+      <!-- Real-time Diagnostics Logs Output Container -->
+      <div style="flex-grow: 1; min-height: 250px; background: #020617; border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 16px; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px; margin-bottom: 12px;">
+          <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.05em;">Console & Error Streams</span>
+          <button onclick="window.__clearDiagConsole()" style="background: transparent; border: none; color: #64748b; font-size: 11px; cursor: pointer; text-decoration: underline;">Clear Display</button>
+        </div>
+        <div id="dm-diag-list" style="flex-grow: 1; overflow-y: auto; font-family: 'Courier New', Courier, monospace; font-size: 11px; line-height: 1.6; display: flex; flex-direction: column; gap: 6px; max-height: 400px;">
+          <!-- Active log statements will sit here -->
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function() {
+        var panel = document.getElementById('dm-diag-panel');
+        var isShown = false;
+
+        window.__toggleDiagnosticPanel = function() {
+          isShown = !isShown;
+          if (isShown) {
+            panel.style.display = 'flex';
+            // Trigger reflow
+            panel.offsetHeight;
+            panel.style.opacity = '1';
+            
+            // Populate stats
+            document.getElementById('dm-diag-env').innerText = (window.Capacitor || (window.location.protocol === 'file:') || (window.location.protocol === 'capacitor:')) ? '📦 Capacitor Native' : '🌐 Standard Browser';
+            document.getElementById('dm-diag-api-override').innerText = localStorage.getItem('swiftcart_api_base_override') || 'Default Fallback';
+            document.getElementById('dm-diag-protocol').innerText = window.location.protocol + ' // ' + window.location.hostname;
+          } else {
+            panel.style.opacity = '0';
+            setTimeout(function() {
+              if (!isShown) panel.style.display = 'none';
+            }, 250);
+          }
+        };
+
+        window.__clearDiagConsole = function() {
+          var listEl = document.getElementById('dm-diag-list');
+          if (listEl) listEl.innerHTML = '<div style="color: #64748b; font-style: italic;">Console log display cleared.</div>';
+        };
+
+        window.__clearDiagCache = function() {
+          if (confirm('Are you sure you want to clear your local session cache, tokens, and active overrides? This resets Daily Mart completely.')) {
+            localStorage.clear();
+            sessionStorage.clear();
+            alert('Cache cleared! Reloading...');
+            window.location.reload(true);
+          }
+        };
+
+        window.__promptApiOverride = function() {
+          var current = localStorage.getItem('swiftcart_api_base_override') || 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+          var input = prompt('Please specify the absolute URL of the Daily Mart Node server/API sandbox base directory:', current);
+          if (input !== null) {
+            var trimmed = input.trim();
+            if (trimmed) {
+              localStorage.setItem('swiftcart_api_base_override', trimmed);
+              alert('Base address override applied successfully: ' + trimmed + '\nReloading to synchronize routing.');
+            } else {
+              localStorage.removeItem('swiftcart_api_base_override');
+              alert('Override removed. Reverting back to default routing fallback.');
+            }
+            window.location.reload(true);
+          }
+        };
+
+        window.__dumpLogsAlert = function() {
+          var text = window.__diagnosticLogs.map(function(l) {
+            return '[' + l.time + '] [' + l.type.toUpperCase() + '] ' + l.message + (l.meta ? '\n' + JSON.stringify(l.meta) : '');
+          }).join('\n');
+          
+          try {
+            navigator.clipboard.writeText(text);
+            alert('Full logs copied to clipboard successfully! You can paste them in chats or forums.');
+          } catch(e) {
+            alert('Unable to copy directly. Alerting first 1600 characters:\n\n' + text.substring(0, 1600));
+          }
+        };
+
+        // Populate any pre-existing logs stored before render
+        setTimeout(function() {
+          if (window.__diagnosticLogs) {
+            for (var i = 0; i < window.__diagnosticLogs.length; i++) {
+              var l = window.__diagnosticLogs[i];
+              // Feed to list
+              var listEl = document.getElementById('dm-diag-list');
+              if (listEl) {
+                var logDiv = document.createElement('div');
+                logDiv.style.borderLeft = '3px solid ' + (l.type === 'error' ? '#ef4444' : l.type === 'warn' ? '#f59e0b' : '#10b981');
+                logDiv.style.paddingLeft = '8px';
+                logDiv.style.marginBottom = '2px';
+                logDiv.style.color = l.type === 'error' ? '#fca5a5' : l.type === 'warn' ? '#fde047' : '#cbd5e1';
+                logDiv.innerHTML = '<span style="color:#64748b;font-weight:600;">[' + l.time + ']</span> <span style="font-weight:bold;text-transform:uppercase;">[' + l.type + ']</span> ' + l.message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                listEl.appendChild(logDiv);
+              }
+            }
+          }
+        }, 100);
+
+        // Hydro/Initialization Watchdog
+        setTimeout(function() {
+          if (!window.__REACT_INIT_SUCCESS__) {
+            window.__addDiagnosticLog('warn', '⏳ Checkpoint: React hydration watchdog triggered. The root shell has not declared success. If you see a white screen, tap here or check the logs above to see which assets failed to parse.');
+          }
+        }, 6000);
+      })();
+    </script>
   </body>
 </html>
 

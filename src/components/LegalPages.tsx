@@ -47,7 +47,7 @@ export default function LegalPages({ initialTab = 'privacy', onBack }: LegalPage
             )}
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="bg-emerald-500 text-white rounded-md px-1.5 py-0.5 text-[9px] font-black tracking-tight uppercase">SwiftCart</span>
+                <span className="bg-emerald-500 text-white rounded-md px-1.5 py-0.5 text-[9px] font-black tracking-tight uppercase">Daily Mart</span>
                 <h1 className="font-display font-black text-lg text-slate-900 tracking-tight">Legal Center</h1>
               </div>
               <p className="text-[10px] text-slate-400 font-mono mt-0.5 uppercase tracking-wider">COMPLIANCE & DATA PROTECTION NODE</p>
@@ -97,7 +97,7 @@ export default function LegalPages({ initialTab = 'privacy', onBack }: LegalPage
                 </div>
                 <h2 className="text-2xl font-black text-slate-900 leading-tight">We Secure User Identity Data</h2>
                 <p className="text-slate-500 text-xs mt-1.5 leading-relaxed font-sans font-medium">
-                  At SwiftCart, your digital privacy is our operational mandate. This Policy declares how we collect, map, process, protect, and purge personal data in full compliance with the Google Play Developer Distribution Agreement and legal privacy standards.
+                  At Daily Mart, your digital privacy is our operational mandate. This Policy declares how we collect, map, process, protect, and purge personal data in full compliance with the Google Play Developer Distribution Agreement and legal privacy standards.
                 </p>
               </div>
 
@@ -184,7 +184,7 @@ export default function LegalPages({ initialTab = 'privacy', onBack }: LegalPage
                 <div>
                   <h4 className="font-extrabold text-sm text-slate-900 mb-1">1. Active Proximity & Foreground Tracking Policy</h4>
                   <p>
-                    SwiftCart operates exclusively on a foreground-only location tracking model (using active browser/app sessions during your use). We do NOT request, collect, or store location coordinates in the background while the application is minimized or closed. Location access occurs only when the delivery tracing screen is actively displayed on your device and is used solely to verify proximity to the designated store and dropoff coordinates.
+                    Daily Mart operates exclusively on a foreground-only location tracking model (using active browser/app sessions during your use). We do NOT request, collect, or store location coordinates in the background while the application is minimized or closed. Location access occurs only when the delivery tracing screen is actively displayed on your device and is used solely to verify proximity to the designated store and dropoff coordinates.
                   </p>
                 </div>
 
@@ -231,7 +231,7 @@ export default function LegalPages({ initialTab = 'privacy', onBack }: LegalPage
                 </div>
                 <h2 className="text-2xl font-black text-slate-900 leading-tight">Hyperlocal Service License Rules</h2>
                 <p className="text-slate-500 text-xs mt-1.5 leading-relaxed font-sans font-medium">
-                  By instantiating, navigating, or transacting on the SwiftCart platform, you agree to comply with standard service guidelines. These terms govern user behavior, delivery protocols, and wallet escrow dynamics.
+                  By instantiating, navigating, or transacting on the Daily Mart platform, you agree to comply with standard service guidelines. These terms govern user behavior, delivery protocols, and wallet escrow dynamics.
                 </p>
               </div>
 
@@ -240,7 +240,7 @@ export default function LegalPages({ initialTab = 'privacy', onBack }: LegalPage
                 <div>
                   <h4 className="font-extrabold text-sm text-slate-900 mb-1">1. Hyperlocal SLA Deliveries & Windows</h4>
                   <p>
-                    SwiftCart establishes an 8-to-10 minute transit goal leveraging strategic local darkstores. By transacting, you acknowledge that delivery times remain estimated coordinates depending on environmental variables (weather constraints, traffic density signals, rider availability). Late arrival does not constitute an automatic monetary fine unless SLA conditions are explicitly violated.
+                    Daily Mart establishes an 8-to-10 minute transit goal leveraging strategic local darkstores. By transacting, you acknowledge that delivery times remain estimated coordinates depending on environmental variables (weather constraints, traffic density signals, rider availability). Late arrival does not constitute an automatic monetary fine unless SLA conditions are explicitly violated.
                   </p>
                 </div>
 
@@ -254,7 +254,7 @@ export default function LegalPages({ initialTab = 'privacy', onBack }: LegalPage
                 <div>
                   <h4 className="font-extrabold text-sm text-slate-900 mb-1">3. Wallet Deposits & Escrow Settlements</h4>
                   <p>
-                    Pre-funding your SwiftCart wallet constitutes a local deposit held securely to honor grocery acquisitions. Payments are settled in favor of store merchant nodes once the dynamic courier confirms successful delivery. You agree that standard chargeback attempts on correctly fulfilled orders represent platform abuse and may result in immediate profile termination.
+                    Pre-funding your Daily Mart wallet constitutes a local deposit held securely to honor grocery acquisitions. Payments are settled in favor of store merchant nodes once the dynamic courier confirms successful delivery. You agree that standard chargeback attempts on correctly fulfilled orders represent platform abuse and may result in immediate profile termination.
                   </p>
                 </div>
 
@@ -318,7 +318,7 @@ export default function LegalPages({ initialTab = 'privacy', onBack }: LegalPage
                 <div>
                   <h4 className="font-extrabold text-sm text-slate-900 mb-1">2. Payout Routing</h4>
                   <p>
-                    Refund credits are by default returned instantly to your <strong>SwiftCart Digital Wallet Balance</strong>, available immediately for future checkouts. If requested by the customer, credits can be routed back to the original funding source (UPI, Credit Card) through Razorpay or Stripe, processing within 5-7 bank business days.
+                    Refund credits are by default returned instantly to your <strong>Daily Mart Digital Wallet Balance</strong>, available immediately for future checkouts. If requested by the customer, credits can be routed back to the original funding source (UPI, Credit Card) through Razorpay or Stripe, processing within 5-7 bank business days.
                   </p>
                 </div>
 
@@ -338,7 +338,7 @@ export default function LegalPages({ initialTab = 'privacy', onBack }: LegalPage
           {/* Subtle decoration vector */}
           <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-500/10 rounded-full blur-xl"></div>
           <h4 className="font-extrabold text-xs text-white uppercase tracking-wider flex items-center justify-center gap-1.5 font-mono">
-            <span>🛡️</span> Institutional SwiftCart Trust Pledge
+            <span>🛡️</span> Institutional Daily Mart Trust Pledge
           </h4>
           <p className="text-[10.5px] text-slate-400 font-medium font-sans leading-relaxed max-w-xl mx-auto">
             Your personal customer registry parameters support your active delivery transits. We strictly comply with Google Play security baselines. For compliance requests or account purges, reach out through our official mail interface: <a href="mailto:akkya992@gmail.com" className="text-emerald-400 font-bold hover:underline font-mono">akkya992@gmail.com</a>

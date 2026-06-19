@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LogOut, ShieldAlert, Sparkles, User, RefreshCw, Layout, Bike, Store, ShoppingBag, Bell, Volume2, X } from 'lucide-react';
 import { UserRole } from './types';
 import AuthPage from './components/AuthPage';
@@ -8,8 +8,29 @@ import SellerDashboard from './components/SellerDashboard';
 import RiderDashboard from './components/RiderDashboard';
 import LegalPages from './components/LegalPages';
 import RoleSelector from './components/RoleSelector';
+// @ts-ignore
+import dailyMartLogo from './assets/images/daily_mart_green_logo_1781598237470.jpg';
 
 export default function App() {
+  // Loop-guard mechanism to detect infinite state updates (Requirement 7)
+  const renderCountRef = useRef(0);
+  const renderTimerRef = useRef<number | null>(null);
+
+  renderCountRef.current += 1;
+  if (!renderTimerRef.current && typeof window !== 'undefined') {
+    renderTimerRef.current = window.setTimeout(() => {
+      if (renderCountRef.current > 45) {
+        const errorMsg = `🚨 INFINITE RENDER LOOP DETECTED: App component rendered ${renderCountRef.current} times within a 2-second interval! This suggests a broken React state loop. Forcing fallback crash.`;
+        if (typeof window !== 'undefined') {
+          (window as any).__addDiagnosticLog?.('error', errorMsg);
+        }
+        throw new Error(errorMsg);
+      }
+      renderCountRef.current = 0;
+      renderTimerRef.current = null;
+    }, 2000);
+  }
+
   // Authentication & session state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedRole, setSelectedRole] = useState<UserRole>('customer');
@@ -251,7 +272,7 @@ export default function App() {
             }
 
             notifTitle = '🛵 New Delivery Offer!';
-            notifBody = `A dispatch ticket worth ₹50 is ready at ${freshJob.items[0]?.product?.sellerName || 'dark store base'}. Open SwiftCart to accept order #${freshJob.id}!`;
+            notifBody = `A dispatch ticket worth ₹50 is ready at ${freshJob.items[0]?.product?.sellerName || 'dark store base'}. Open Daily Mart to accept order #${freshJob.id}!`;
           }
 
           if (playSound) {
@@ -288,7 +309,7 @@ export default function App() {
           } catch(e) {}
           
           new Notification("🔔 Alarms Activated", {
-            body: "SwiftCart dispatch ringtones are now configured in your browser. Alarms will sound instantly!",
+            body: "Daily Mart dispatch ringtones are now configured in your browser. Alarms will sound instantly!",
             icon: '/favicon.ico'
           });
         }
@@ -302,6 +323,10 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const win = window as any;
+      win.__addDiagnosticLog?.('info', '📱 React: App container component mounted successfully.');
+    }
     tryRecoverySession();
     
     const handleLocationChange = () => {
@@ -323,10 +348,53 @@ export default function App() {
     }, 1800);
     
     return () => {
+      if (typeof window !== 'undefined') {
+        const win = window as any;
+        win.__addDiagnosticLog?.('info', '📱 React: App container component unmounted.');
+      }
       window.removeEventListener('popstate', handleLocationChange);
       clearTimeout(timer);
     };
   }, []);
+
+  // Monitor loading durations (Task 5)
+  const [loadingTimeExceeded, setLoadingTimeExceeded] = useState(false);
+  useEffect(() => {
+    if (sessionLoading || splashLoading) {
+      const timer = setTimeout(() => {
+        setLoadingTimeExceeded(true);
+        if (typeof window !== 'undefined') {
+          const win = window as any;
+          win.__addDiagnosticLog?.('warn', '⏳ INF_LOAD_ALERT: Loading screens active for over 5 seconds. Providing interactive bypass controls to prevent white/blank screens.');
+        }
+      }, 5000);
+      return () => clearTimeout(timer);
+    } else {
+      setLoadingTimeExceeded(false);
+    }
+  }, [sessionLoading, splashLoading]);
+
+  // Trace active route settings and identify unmatched paths (Requirement 2 & Task 2)
+  const prevRouteRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const win = window as any;
+      const prevPath = prevRouteRef.current;
+      
+      win.__addDiagnosticLog?.('info', `🧭 [ROUTING EVENT] Route transition update:`, {
+        previousRoute: prevPath || 'INITIAL_MOUNT',
+        currentRoute: currentPath,
+        time: new Date().toISOString()
+      });
+      
+      const recognizedPaths = ['/', '/admin', '/seller', '/rider', '/privacy', '/terms', '/refunds', ''];
+      if (!recognizedPaths.includes(currentPath)) {
+        win.__addDiagnosticLog?.('error', `🧭 [ROUTING FAILURE] Route match failure! No component handler registered for: "${currentPath}". Fallback rendering defaults to primary Customer dashboard view.`);
+      }
+      
+      prevRouteRef.current = currentPath;
+    }
+  }, [currentPath]);
 
   // Secure path and role protection guard
   useEffect(() => {
@@ -346,8 +414,18 @@ export default function App() {
   }, [currentPath, isAuthenticated, userProfile, isAdminPasswordVerified]);
 
   const navigateRole = (role: UserRole) => {
+    const prev = currentPath;
     setSelectedRole(role);
     const path = role === 'customer' ? '/' : `/${role}`;
+    
+    if (typeof window !== 'undefined') {
+      const win = window as any;
+      win.__addDiagnosticLog?.('info', `🧭 [ROUTING REDIRECT] Initiated navigateRole redirect: "${role}" workspace`, {
+        fromPath: prev,
+        toPath: path
+      });
+    }
+
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path);
       setCurrentPath(path);
@@ -406,11 +484,26 @@ export default function App() {
   };
 
   const tryRecoverySession = async () => {
+    if (typeof window !== 'undefined') {
+      const win = window as any;
+      win.__addDiagnosticLog?.('info', '🔑 [SESSION RESTORE ENGINE] Start session restoration sequence.');
+    }
     const savedToken = localStorage.getItem('swiftcart_jwt_token');
     
     if (!savedToken) {
+      if (typeof window !== 'undefined') {
+        const win = window as any;
+        win.__addDiagnosticLog?.('info', 'ℹ️ [SESSION RESTORE ENGINE] No swiftcart_jwt_token was found in localStorage. Proceeding as Guest customer user.');
+      }
       setSessionLoading(false);
       return;
+    }
+
+    if (typeof window !== 'undefined') {
+      const win = window as any;
+      win.__addDiagnosticLog?.('info', `🔑 [SESSION RESTORE ENGINE] Token discovered in cache. Verifying signature and lifespan with endpoint /api/auth/verify-token`, {
+        tokenPreview: `${savedToken.substring(0, 12)}...`
+      });
     }
 
     try {
@@ -430,6 +523,11 @@ export default function App() {
         const actualRole = data.role;
         let roleToSet = 'customer';
 
+        if (typeof window !== 'undefined') {
+          const win = window as any;
+          win.__addDiagnosticLog?.('info', `✅ [SESSION RESTORE ENGINE] Credentials verified successfully! Profile: ${data.profile?.email || 'N/A'}, dbRole: ${actualRole}, targetView: ${pathname}`);
+        }
+
         if (pathname === '/admin') {
           if (actualRole === 'admin') {
             roleToSet = 'admin';
@@ -437,6 +535,10 @@ export default function App() {
             roleToSet = 'customer';
             window.history.replaceState({}, '', '/');
             setCurrentPath('/');
+            if (typeof window !== 'undefined') {
+              const win = window as any;
+              win.__addDiagnosticLog?.('warn', `🧭 [ROUTING GUARD] Non-admin cannot load /admin. Redirecting user to customer home page.`);
+            }
           }
         }
         else if (pathname === '/seller') {
@@ -446,6 +548,10 @@ export default function App() {
             roleToSet = 'customer';
             window.history.replaceState({}, '', '/');
             setCurrentPath('/');
+            if (typeof window !== 'undefined') {
+              const win = window as any;
+              win.__addDiagnosticLog?.('warn', `🧭 [ROUTING GUARD] User lacks seller privileges. Redirecting to customer landing.`);
+            }
           }
         }
         else if (pathname === '/rider') {
@@ -455,6 +561,10 @@ export default function App() {
             roleToSet = 'customer';
             window.history.replaceState({}, '', '/');
             setCurrentPath('/');
+            if (typeof window !== 'undefined') {
+              const win = window as any;
+              win.__addDiagnosticLog?.('warn', `🧭 [ROUTING GUARD] User lacks rider privileges. Redirecting to customer landing.`);
+            }
           }
         }
         else if (pathname === '/' || pathname === '') {
@@ -462,6 +572,10 @@ export default function App() {
           if (actualRole !== 'customer' && actualRole !== 'admin') {
             window.history.replaceState({}, '', `/${actualRole}`);
             setCurrentPath(`/${actualRole}`);
+            if (typeof window !== 'undefined') {
+              const win = window as any;
+              win.__addDiagnosticLog?.('info', `🧭 [ROUTING GUARD] Auto routing user to corresponding native home view: /${actualRole}`);
+            }
           }
         } else {
           roleToSet = 'customer';
@@ -474,16 +588,33 @@ export default function App() {
         setIsAuthenticated(true);
         console.log('[SESSION ENGINE] Recovered JWT for active user: ', data.profile.email);
       } else {
+        if (typeof window !== 'undefined') {
+          const win = window as any;
+          win.__addDiagnosticLog?.('warn', `⚠️ [SESSION RESTORE ENGINE] Token verify-token check failed. Server message: ${data.error || 'Authentication rejected'}. Clearing cached token.`);
+        }
         localStorage.removeItem('swiftcart_jwt_token');
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (typeof window !== 'undefined') {
+        const win = window as any;
+        win.__addDiagnosticLog?.('error', `❌ [SESSION RESTORE ENGINE] Connection attempt to verify-token failed. Sandbox Node API is unreachable or has high latency: ${e.message || String(e)}`, {
+          error: e
+        });
+      }
       console.warn('[SESSION ENGINE] Connection to sandbox failed. Default to auth screen.', e);
     } finally {
+      if (typeof window !== 'undefined') {
+        const win = window as any;
+        win.__addDiagnosticLog?.('info', `🏁 [SESSION RESTORE ENGINE] Session restoration completed.`);
+      }
       setSessionLoading(false);
     }
   };
 
   const handleLoginSuccess = (phone: string, role: UserRole, profile: any) => {
+    if (typeof window !== 'undefined') {
+      (window as any).__addDiagnosticLog?.('info', `🔑 [AUTH EVENT] Login succeeded with identity: ${phone || (profile && profile.phone) || 'N/A'}. Target workspace role: ${role || (profile && profile.role) || 'N/A'}`);
+    }
     setUserProfile(profile);
     setToken(localStorage.getItem('swiftcart_jwt_token'));
     setIsAuthenticated(true);
@@ -498,6 +629,9 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (typeof window !== 'undefined') {
+      (window as any).__addDiagnosticLog?.('info', `🔑 [AUTH EVENT] User sign out requested for active profile: ${userProfile?.email || 'Authenticated User'}. Wiping transaction caches and redirecting to Customer view.`);
+    }
     localStorage.removeItem('swiftcart_jwt_token');
     sessionStorage.removeItem('is_admin_verified');
     setIsAdminPasswordVerified(false);
@@ -573,10 +707,15 @@ export default function App() {
             {/* outer halo pulsing */}
             <div className="absolute inset-0 bg-emerald-500/20 rounded-full blur-md animate-ping scale-75"></div>
             
-            <div className="w-20 h-20 bg-gradient-to-tr from-emerald-600 to-emerald-400 text-white rounded-[24px] flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.3)] mx-auto relative animate-float-slow">
-              <ShoppingBag className="w-10 h-10 stroke-[2.2]" />
+            <div className="w-20 h-20 bg-gradient-to-tr from-emerald-600 to-emerald-400 text-white rounded-[24px] flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.3)] mx-auto relative animate-float-slow overflow-hidden">
+              <img 
+                src={dailyMartLogo} 
+                alt="Daily Mart Logo" 
+                className="w-full h-full object-cover rounded-[24px]" 
+                referrerPolicy="no-referrer"
+              />
               {/* Little moving courier pill */}
-              <div className="absolute -bottom-2 -right-3 bg-yellow-400 text-slate-900 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider flex items-center gap-0.5 border-2 border-slate-950">
+              <div className="absolute -bottom-2 -right-3 bg-yellow-400 text-slate-900 px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider flex items-center gap-0.5 border-2 border-slate-950 z-20">
                 <Bike className="w-3 h-3 animate-bounce" /> 10 MINS
               </div>
             </div>
@@ -584,7 +723,7 @@ export default function App() {
 
           <div className="space-y-2">
             <h1 className="font-display font-black text-3xl text-white tracking-tight">
-              Blink<span className="text-emerald-400">Store</span>
+              Daily<span className="text-emerald-400">Mart</span>
             </h1>
             <p className="font-sans text-[11px] text-emerald-400 font-extrabold uppercase tracking-widest">
               Express Cargo Delivery Engine
@@ -613,6 +752,43 @@ export default function App() {
               <span>BOOT_OK v1.5</span>
               <span>100% SECURE</span>
             </div>
+
+            {loadingTimeExceeded && (
+              <div id="stuck-loader-bypass" className="mt-6 p-4 bg-slate-900/90 border border-amber-500/30 rounded-2xl animate-fade-in space-y-3 text-left">
+                <p className="text-[10px] font-mono text-amber-400 font-bold tracking-wider uppercase flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                  ⚠️ High Latency / Network Offline Bypass
+                </p>
+                <p className="text-[10.5px] text-slate-400 font-light leading-relaxed font-sans">
+                  Daily Mart is verifying credentials with our sandboxed backend. If your device has slow or offline connection features, tap below to bypass:
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    id="btn-bypass-loader"
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        (window as any).__addDiagnosticLog?.('info', '⏭️ User bypassed loading screens manually.');
+                      }
+                      setSessionLoading(false);
+                      setSplashLoading(false);
+                    }}
+                    className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95 text-center"
+                  >
+                    Bypass & Load
+                  </button>
+                  <button
+                    id="btn-reset-loader"
+                    onClick={() => {
+                      localStorage.clear();
+                      window.location.reload();
+                    }}
+                    className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer text-center"
+                  >
+                    Reset Cache
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
         </div>

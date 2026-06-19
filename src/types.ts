@@ -171,4 +171,34 @@ export interface RestaurantProduct {
   createdAt?: string;
 }
 
+export interface Hostel {
+  id: string;
+  name: string;
+  image?: string;
+  address?: string;
+  phone?: string;
+  isActive?: boolean;
+  createdAt?: string;
+}
+
+export interface TiffinCategory {
+  id: string;
+  hostelId: string; // references Hostel id
+  name: string; // Breakfast, Lunch, Dinner, Snacks, etc.
+  createdAt?: string;
+}
+
+export interface TiffinItem {
+  id: string;
+  hostelId: string;
+  tiffinCategoryId: string; // references TiffinCategory id
+  name: string;
+  price: number;
+  description?: string;
+  image?: string;
+  isAvailable?: boolean;
+  createdAt?: string;
+}
+
+
 

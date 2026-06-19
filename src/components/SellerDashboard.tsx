@@ -196,7 +196,7 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
       return;
     }
 
-    if (Notification.permission !== 'granted') {
+    if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
       Notification.requestPermission().then(perm => {
         if (perm !== 'granted') {
           alert('System OS Notification permission is highly suggested for background alarms to buzz when the app is minimized!');
@@ -2085,7 +2085,7 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
       {/* 5. SELLER SYSTEM CONTROL FOOTER */}
       <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
         <p className="text-[10px] text-slate-400 font-mono font-bold">
-          SwiftCart Platform Partner Node ID: {resolvedSellerId} • Terminal Ver: 3.5.1
+          Daily Mart Platform Partner Node ID: {resolvedSellerId} • Terminal Ver: 3.5.1
         </p>
         <button
           onClick={onLogout}

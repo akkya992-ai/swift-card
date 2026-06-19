@@ -281,7 +281,19 @@ RETURNS TRIGGER AS $$
 DECLARE
     current_available_stock INT;
     parent_order_status VARCHAR(50);
+    bypass_check VARCHAR(50);
 BEGIN
+    -- Allow bypassing stock check for synchronization operations
+    BEGIN
+        SELECT current_setting('app.bypass_stock_check', true) INTO bypass_check;
+    EXCEPTION WHEN OTHERS THEN
+        bypass_check := 'false';
+    END;
+
+    IF bypass_check = 'true' THEN
+        RETURN NEW;
+    END IF;
+
     -- Select the stock with an exclusive row lock to block competing concurrent checkouts on the same product
     SELECT stock - reserved_stock INTO current_available_stock
     FROM inventory

@@ -34,7 +34,7 @@ export default function RoleSelector({
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 font-black tracking-wider text-emerald-400">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-          <span>SWIFTCART LIVE WORKSPACE</span>
+          <span>DAILY MART LIVE WORKSPACE</span>
         </div>
         <div className="h-4 w-px bg-slate-800"></div>
         <span className="text-slate-300 font-bold bg-slate-800 px-3 py-1 rounded-lg border border-slate-700/50 uppercase tracking-wider text-[10px]">

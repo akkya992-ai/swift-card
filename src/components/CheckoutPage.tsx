@@ -86,7 +86,7 @@ export default function CheckoutPage({
       setSelectedAddress('');
     }
   }, [activeAddressId, savedAddresses]);
-  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'UPI' | 'CREDIT_CARD' | 'DEBIT_CARD'>('COD');
+  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'UPI' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'ONLINE' | 'WALLET' | 'RAZORPAY'>('COD');
 
   // Coupon state
   const [couponCode, setCouponCode] = useState('');
@@ -514,7 +514,7 @@ export default function CheckoutPage({
                 {/* Simulate invoice downloading PDF */}
                 <button
                   onClick={() => {
-                    alert("DOWNLOADING INVOICE... Simulated PDF file downloaded: swiftcart_invoice_" + placedOrder.id + ".pdf");
+                    alert("DOWNLOADING INVOICE... Simulated PDF file downloaded: dailymart_invoice_" + placedOrder.id + ".pdf");
                   }}
                   className="w-full mt-2 py-1.5 bg-slate-900 text-white font-extrabold text-[10px] rounded-lg tracking-wider hover:bg-slate-800 uppercase flex items-center justify-center gap-1.5"
                 >
@@ -907,7 +907,7 @@ export default function CheckoutPage({
                       <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950 p-4 font-mono text-white rounded-2xl flex flex-col justify-between backface-hidden">
                         <div className="flex justify-between items-start">
                           <div>
-                            <span className="text-[8px] text-slate-400 uppercase font-bold block">SwiftCart Premium Card</span>
+                            <span className="text-[8px] text-slate-400 uppercase font-bold block">Daily Mart Premium Card</span>
                             <span className="text-xs font-black tracking-widest text-emerald-400">{paymentMethod.replace('_', ' ')}</span>
                           </div>
                           
@@ -939,7 +939,7 @@ export default function CheckoutPage({
                         <div className="p-4 flex flex-col">
                           <label className="text-[7px] text-slate-400 uppercase tracking-wider text-right pr-2">CVV Security Number</label>
                           <div className="flex justify-between items-center bg-slate-100 text-slate-800 px-3 py-1 text-sm text-right rounded font-bold">
-                            <span className="text-xs text-slate-400 font-mono">Swift signature column check</span>
+                            <span className="text-xs text-slate-400 font-mono">Daily signature column check</span>
                             <span className="font-mono text-slate-900">{cardCvv || '•••'}</span>
                           </div>
                         </div>

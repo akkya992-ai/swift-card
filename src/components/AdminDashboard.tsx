@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import RestaurantInfographic from './RestaurantInfographic';
 import RestaurantAdminPortal from './RestaurantAdminPortal';
+import TiffinAdminPortal from './TiffinAdminPortal';
 import { 
   ShieldAlert, 
   IndianRupee, 
@@ -35,6 +36,7 @@ import {
   Activity,
   Radio,
   Utensils,
+  Coffee,
   Database,
   HardDrive
 } from 'lucide-react';
@@ -86,8 +88,8 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   
-  // Tab control states: 'analytics' | 'products' | 'orders' | 'customers' | 'coupons' | 'banners' | 'requests' | 'notifications' | 'infographic' | 'backups'
-  const [activeTab, setActiveTab] = useState<'analytics' | 'products' | 'orders' | 'customers' | 'coupons' | 'banners' | 'requests' | 'notifications' | 'infographic' | 'backups'>('analytics');
+  // Tab control states: 'analytics' | 'products' | 'orders' | 'customers' | 'coupons' | 'banners' | 'requests' | 'notifications' | 'infographic' | 'backups' | 'tiffins'
+  const [activeTab, setActiveTab] = useState<'analytics' | 'products' | 'orders' | 'customers' | 'coupons' | 'banners' | 'requests' | 'notifications' | 'infographic' | 'backups' | 'tiffins'>('analytics');
 
   // Outbound Notification Simulation logs state
   const [outboundNotifications, setOutboundNotifications] = useState<any[]>([]);
@@ -357,7 +359,7 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
       return;
     }
 
-    if (Notification.permission !== 'granted') {
+    if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
       Notification.requestPermission().then(perm => {
         if (perm !== 'granted') {
           alert('System OS Notification permission is highly suggested for background alarms to buzz when the app is minimized!');
@@ -745,7 +747,7 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
 
   // Customers manager handlers
   const handleDeleteCustomer = async (id: string) => {
-    if (!confirm('Are you absolutely sure you want to ban/purge this customer index from Swift Cart database?')) return;
+    if (!confirm('Are you absolutely sure you want to ban/purge this customer index from Daily Mart database?')) return;
     try {
       const res = await fetch(`/api/customers/${id}`, { method: 'DELETE' });
       const data = await res.json();
@@ -856,7 +858,7 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
         isTrending: formFeatured,
         isRecommended: formBestSeller,
         sellerId: 'admin_managed',
-        sellerName: 'Swift Cart Express Depot',
+        sellerName: 'Daily Mart Express Depot',
         deliveryMinutes: 10
       };
 
@@ -1156,7 +1158,7 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
           <span className="text-[10px] font-black uppercase text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200. flex items-center gap-1 w-max">
             🔑 Certified Root Admin Access
           </span>
-          <h2 className="text-2xl font-black text-slate-950 mt-1 tracking-tight">SwiftCart Operations Admin</h2>
+          <h2 className="text-2xl font-black text-slate-950 mt-1 tracking-tight">Daily Mart Operations Admin</h2>
           <p className="text-xs text-slate-450 font-semibold mt-0.5">Control live transactions, delist inventory, inspect demographics, and configure campaigns.</p>
         </div>
         <div className="flex gap-2">
@@ -1258,6 +1260,14 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
           }`}
         >
           <Utensils className="w-4 h-4" /> Manage Restaurants
+        </button>
+        <button
+          onClick={() => setActiveTab('tiffins')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'tiffins' ? 'bg-teal-600 text-white shadow-md' : 'text-slate-500 hover:text-teal-750 bg-teal-500/5'
+          }`}
+        >
+          <Coffee className="w-4 h-4" /> Manage Tiffins
         </button>
         <button
           onClick={() => setActiveTab('backups')}
@@ -2756,6 +2766,11 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
       {/* TAB CONTAINER 9: RESTAURANT PORTAL MANAGEMENT */}
       {activeTab === 'infographic' && (
         <RestaurantAdminPortal />
+      )}
+
+      {/* TAB CONTAINER 11: HOSTELS & TIFFINS MANAGEMENT */}
+      {activeTab === 'tiffins' && (
+        <TiffinAdminPortal />
       )}
 
       {/* TAB CONTAINER 10: AUTOMATED BACKUPS AND DISASTER RECOVERY */}

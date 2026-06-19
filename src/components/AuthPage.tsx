@@ -29,6 +29,8 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword 
 } from '../firebase';
+// @ts-ignore
+import dailyMartLogo from '../assets/images/daily_mart_green_logo_1781598237470.jpg';
 
 interface SafeImageProps {
   src: string;
@@ -687,11 +689,16 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
       {/* Primary Header */}
       <header className="py-6 px-6 flex justify-between items-center z-10 w-full max-w-7xl mx-auto shrink-0 md:bg-white md:shadow-xs md:rounded-b-3xl">
         <div className="flex items-center gap-2">
-          <div className="bg-emerald-600 p-2 rounded-2xl text-white font-black text-sm shadow-[0_4px_12px_rgba(16,185,129,0.3)] flex items-center justify-center">
-            ⚡
+          <div className="w-9 h-9 rounded-xl overflow-hidden shadow-[0_4px_12px_rgba(16,185,129,0.3)] flex items-center justify-center">
+            <img 
+              src={dailyMartLogo} 
+              alt="Daily Mart Logo" 
+              className="w-full h-full object-cover" 
+              referrerPolicy="no-referrer"
+            />
           </div>
           <span className="font-extrabold text-xl tracking-tight text-slate-950">
-            Swift<span className="text-emerald-600">Cart</span>
+            Daily<span className="text-emerald-600">Mart</span>
           </span>
         </div>
         <div className="text-[10px] font-bold uppercase text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 flex items-center gap-1.5">
@@ -1309,7 +1316,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
 
       {/* Footer Branding */}
       <footer className="py-6 shrink-0 text-center text-[10px] text-slate-400 border-t border-slate-205/20 mt-auto md:bg-white md:shadow-xs">
-        <p className="font-extrabold">© 2026 SwiftCart Logistics, Inc. All rights reserved.</p>
+        <p className="font-extrabold">© 2026 Daily Mart Logistics, Inc. All rights reserved.</p>
         <p className="text-[9px] text-slate-400/80 font-semibold mt-1">Real-time express darkstores serving your local community.</p>
       </footer>
 
@@ -1321,7 +1328,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
               📜 Terms of Service
             </h3>
             <p className="text-[11px] text-slate-500 mt-2 font-medium leading-relaxed">
-              Welcome to SwiftCart. By accessing our platform darkstore services, you agree to be bound by standard user terms of hyperlocal commerce.
+              Welcome to Daily Mart. By accessing our platform darkstore services, you agree to be bound by standard user terms of hyperlocal commerce.
             </p>
             <div className="mt-4 space-y-2.5 pt-3 border-t border-slate-100 text-[10.5px] text-slate-600 leading-relaxed font-sans">
               <p>
@@ -1352,7 +1359,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
               🔒 Privacy Policy
             </h3>
             <p className="text-[11px] text-slate-500 mt-2 font-medium leading-relaxed">
-              At SwiftCart, we prioritize database safety and personal identity confidentiality.
+              At Daily Mart, we prioritize database safety and personal identity confidentiality.
             </p>
             <div className="mt-4 space-y-2.5 pt-3 border-t border-slate-100 text-[10.5px] text-slate-600 leading-relaxed font-sans">
               <p>

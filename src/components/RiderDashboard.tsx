@@ -422,7 +422,7 @@ export default function RiderDashboard({ userProfile, onLogout, reloadUserProfil
       return;
     }
 
-    if (Notification.permission !== 'granted') {
+    if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
       Notification.requestPermission().then(perm => {
         if (perm !== 'granted') {
           alert('System OS Notification permission is highly suggested for background alarms to buzz when the app is minimized!');

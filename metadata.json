@@ -1,6 +1,6 @@
 {
-  "name": "Swift Cart",
-  "description": "A full-stack quick commerce application featuring Customer, Admin, Seller, and Delivery Rider interfaces with an elegant green-white theme similar to Blinkit.",
+  "name": "Daily Mart",
+  "description": "A full-stack quick commerce application featuring Customer, Admin, Seller, and Delivery Rider interfaces with an elegant green-white theme similar to Blinkit as Daily Mart.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -107,7 +107,7 @@ export default function LiveTracking({
       if (triggerNotification) {
         triggerNotification(
           "Refund Processed! 💳",
-          `₹${order.total} has been credited back to your SwiftCart Wallet instantly.`,
+          `₹${order.total} has been credited back to your Daily Mart Wallet instantly.`,
           "success"
         );
       }
@@ -333,7 +333,7 @@ export default function LiveTracking({
         </button>
         <span className="text-[10px] font-black tracking-wider text-indigo-600 bg-indigo-50 border border-indigo-100 uppercase px-2 py-1 rounded-md flex items-center gap-1 animate-pulse">
           <Sparkles className="w-3 h-3 text-indigo-500" />
-          SWIFTCART DISPATCH FEEDBACK ACTIVE
+          DAILY MART DISPATCH FEEDBACK ACTIVE
         </span>
       </div>
 
@@ -486,7 +486,7 @@ export default function LiveTracking({
                     <div>
                       <h4 className="font-black text-[11px] text-rose-900 uppercase">Confirm Cancel Purchase?</h4>
                       <p className="text-[10px] text-rose-700 font-semibold mt-0.5 leading-relaxed">
-                        This order will be terminated. Since payment was completed, a full refund of <span className="font-black text-rose-950 font-mono">₹{order.total}</span> will be credited instantly back to your SwiftCart Wallet balance.
+                        This order will be terminated. Since payment was completed, a full refund of <span className="font-black text-rose-950 font-mono">₹{order.total}</span> will be credited instantly back to your Daily Mart Wallet balance.
                       </p>
                     </div>
                   </div>
@@ -548,7 +548,7 @@ export default function LiveTracking({
                       Active EV Agent
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-400 font-mono mt-0.5 leading-none">SwiftCart Electric Fleet • Zero Emission Transit</p>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5 leading-none">Daily Mart Electric Fleet • Zero Emission Transit</p>
                   {order.riderPhone && (
                     <p className="text-[10px] text-slate-500 font-sans mt-1">Phone: <span className="font-extrabold text-slate-700">{order.riderPhone}</span></p>
                   )}
