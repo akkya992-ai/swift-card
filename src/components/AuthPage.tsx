@@ -16,7 +16,8 @@ import {
   Store,
   Truck,
   UserCheck,
-  Check
+  Check,
+  X
 } from 'lucide-react';
 import { UserRole } from '../types';
 import { 
@@ -486,7 +487,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
 
         const data = await res.json();
         if (!res.ok) {
-          throw new Error('Verification failed');
+          throw new Error(data.error || 'Failed to dispatch sandbox OTP.');
         }
 
         const verifyRes = await fetch('/api/auth/verify-otp', {
@@ -505,7 +506,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
 
         const verifyData = await verifyRes.json();
         if (!verifyRes.ok) {
-          throw new Error('Invalid verification code');
+          throw new Error(verifyData.error || 'Invalid verification code');
         }
 
         if (verifyData.token) {
@@ -514,7 +515,11 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
         
         onLoginSuccess(verifyData.profile.phone, selectedRole, verifyData.profile);
       } catch (err: any) {
-        setError('Invalid verification code');
+        const baseOverride = localStorage.getItem('swiftcart_api_base_override') || 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+        setError(err.message === 'Failed to fetch' || err.message?.includes('network') || err.message?.includes('timeout')
+          ? `Connection failed. Could not reach server at ${baseOverride}. Please verify your internet connection or tap the Settings gear in the top-right to override the API server IP.\nError: ${err.message}`
+          : err.message || 'Simulated verification failed.'
+        );
       } finally {
         setLoading(false);
       }
@@ -680,7 +685,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col justify-between relative overflow-hidden select-none pb-12">
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col justify-between relative overflow-y-auto select-none pb-12">
       
       {/* Decorative Blur Backdrops */}
       <div className="absolute top-[-100px] left-[-100px] w-96 h-96 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none"></div>
@@ -701,9 +706,19 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
             Daily<span className="text-emerald-600">Mart</span>
           </span>
         </div>
-        <div className="text-[10px] font-bold uppercase text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-          Hyperlocal Express Portal
+        <div className="flex items-center gap-2">
+          <div className="text-[10px] font-bold uppercase text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+            Hyperlocal Express Portal
+          </div>
+          <button 
+            type="button"
+            onClick={() => setShowConfigDrawer(true)}
+            className="flex items-center justify-center p-2 rounded-full cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
+            title="Developer Credentials & Server Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
@@ -711,7 +726,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-8 z-10 flex flex-col lg:flex-row gap-8 items-start justify-center">
         
         {/* Left Side: Stunning Hero Banner & Hyperlocal Segments Showcase */}
-        <div className="w-full lg:w-7/12 flex flex-col gap-6 select-none">
+        <div className="hidden lg:flex w-full lg:w-7/12 flex-col gap-6 select-none">
           
           {/* Real Premium Hero Banner */}
           <div className="relative w-full rounded-3xl overflow-hidden bg-gradient-to-br from-emerald-900 to-teal-950 text-white p-6 md:p-8 shadow-md border border-emerald-800 flex flex-col sm:flex-row items-center justify-between gap-6 min-h-[220px]">
@@ -860,7 +875,15 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
 
         {/* Right Side: Glassmorphic Auth Form */}
         <div className="w-full lg:w-5/12 max-w-md shrink-0 flex flex-col">
-          <div className="w-full bg-white rounded-[32px] p-6 shadow-xl border border-slate-100 space-y-6">
+          <div className="w-full bg-white rounded-[32px] p-6 shadow-xl border border-slate-100 space-y-6 relative">
+            <button 
+              type="button"
+              onClick={() => setShowConfigDrawer(true)}
+              className="absolute top-5 right-5 p-2 rounded-full cursor-pointer bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition z-10"
+              title="Developer Credentials & Server Settings"
+            >
+              <Settings className="w-4.5 h-4.5" />
+            </button>
             
             {/* Logo Title section */}
             <div className="text-center space-y-1">
@@ -1378,6 +1401,174 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
             >
               Dismiss Policy
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Native Developer Configuration Drawer Modal */}
+      {showConfigDrawer && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 flex flex-col max-h-[85vh] overflow-y-auto text-left">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100 mb-4">
+              <h3 className="text-sm font-black text-slate-950 flex items-center gap-1.5">
+                ⚙️ Developer & Auth Settings
+              </h3>
+              <button 
+                onClick={() => setShowConfigDrawer(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-full hover:bg-slate-50"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* API BASE URL Config */}
+            <div className="space-y-4 font-sans text-xs">
+              <div>
+                <label className="block text-[10px] font-extrabold uppercase text-slate-400 mb-1.5">
+                  Server API Base URL
+                </label>
+                <input 
+                  type="text"
+                  placeholder="https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app"
+                  value={localStorage.getItem('swiftcart_api_base_override') || ''}
+                  onChange={(e) => {
+                    const val = e.target.value.trim();
+                    if (val) {
+                      localStorage.setItem('swiftcart_api_base_override', val);
+                    } else {
+                      localStorage.removeItem('swiftcart_api_base_override');
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-mono text-[11px] bg-slate-50 text-slate-800"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Point to a different Cloud Run URL or your local PC IP (e.g. <span className="font-mono">http://192.168.1.100:3000</span>) for offline APK debugging.
+                </p>
+              </div>
+
+              {/* Ping Connectivity Tool */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex items-center justify-between">
+                <div>
+                  <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Server Connectivity Pin</span>
+                  <span className="text-[11px] font-bold text-slate-700">Test API routes</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    const btn = e.currentTarget;
+                    btn.disabled = true;
+                    btn.innerText = "Pinging...";
+                    const base = localStorage.getItem('swiftcart_api_base_override') || 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+                    try {
+                      const res = await fetch(`${base.replace(/\/+$/, '')}/api/health`, { method: 'GET' });
+                      if (res.ok) {
+                        alert(`🟢 CONNECTED! Server responded successfully with HTTP ${res.status}`);
+                      } else {
+                        alert(`🔴 FAILED! Server returned status ${res.status}`);
+                      }
+                    } catch (err: any) {
+                      alert(`🔴 UNREACHABLE! Could not connect to: ${base}\nError: ${err.message || String(err)}`);
+                    } finally {
+                      btn.disabled = false;
+                      btn.innerText = "Ping Server";
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 transition rounded-lg text-[10px] font-bold text-slate-700 cursor-pointer border border-transparent"
+                >
+                  Ping Server
+                </button>
+              </div>
+
+              {/* Simulation Sandbox Mode */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex items-center justify-between">
+                <div>
+                  <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Firebase Simulation</span>
+                  <span className="text-[11px] font-bold text-slate-700">Sandbox Login Bypass</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const isBypassed = localStorage.getItem('swiftcart_bypass_firebase') === 'true';
+                    if (isBypassed) {
+                      localStorage.removeItem('swiftcart_bypass_firebase');
+                      alert('Firebase Live Auth activated! App will attempt to load real Google/Phone OTP secrets.');
+                    } else {
+                      localStorage.setItem('swiftcart_bypass_firebase', 'true');
+                      alert('Firebase Sandbox simulated! Logins will route through local memory backend credentials safely.');
+                    }
+                    window.location.reload();
+                  }}
+                  className={`px-3 py-1.5 transition rounded-lg text-[10px] font-bold cursor-pointer ${
+                    localStorage.getItem('swiftcart_bypass_firebase') === 'true'
+                      ? 'bg-amber-600 text-white hover:bg-amber-700'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  }`}
+                >
+                  {localStorage.getItem('swiftcart_bypass_firebase') === 'true' ? 'Simulated' : 'Live Auth'}
+                </button>
+              </div>
+
+              {/* Demo accounts presets for 1-click test login */}
+              <div>
+                <span className="block text-[10px] font-extrabold uppercase text-slate-400 mb-1.5">
+                  1-Click Auto-Fill Demo Accounts
+                </span>
+                <div className="grid grid-cols-2 gap-2 text-[10.5px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('customer@dailymart.com');
+                      setPassword('password');
+                      setSelectedRole('customer');
+                      setIsRegistering(false);
+                      setPhone('');
+                      alert('Demo Customer values loaded! Press Sign In.');
+                    }}
+                    className="p-2 border border-slate-200 hover:border-emerald-500 text-slate-700 rounded-xl hover:bg-emerald-50/20 text-left transition font-semibold cursor-pointer"
+                  >
+                    🛒 Demo Customer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('rider@dailymart.com');
+                      setPassword('password');
+                      setSelectedRole('rider');
+                      setIsRegistering(false);
+                      setPhone('');
+                      alert('Demo Rider values loaded! Press Sign In.');
+                    }}
+                    className="p-2 border border-slate-200 hover:border-emerald-500 text-slate-700 rounded-xl hover:bg-emerald-50/20 text-left transition font-semibold cursor-pointer"
+                  >
+                    🛵 Demo Rider
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Utility Commands */}
+            <div className="mt-6 pt-4 border-t border-slate-100 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm('Revert all overrides, clear storage cache, and reload?')) {
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    window.location.reload();
+                  }
+                }}
+                className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition cursor-pointer text-center"
+              >
+                Reset Setup
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="flex-1 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition cursor-pointer text-center"
+              >
+                Reload Web
+              </button>
+            </div>
           </div>
         </div>
       )}
