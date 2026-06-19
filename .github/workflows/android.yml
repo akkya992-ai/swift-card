@@ -10,18 +10,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-node@v4
         with:
-          distribution: temurin
-          java-version: '17'
+          node-version: 20
 
-      - uses: gradle/actions/setup-gradle@v4
+      - run: npm install
 
-      - run: chmod +x gradlew
-
-      - run: ./gradlew assembleDebug
+      - run: npm run build
 
       - uses: actions/upload-artifact@v4
         with:
-          name: apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: web-build
+          path: dist
