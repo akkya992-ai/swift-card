@@ -1,41 +1,7 @@
 {
   "products": [
     {
-      "id": "069c69e9-521e-4632-8180-1e6eea53e62b",
-      "name": "Mango",
-      "price": 180,
-      "originalPrice": 220,
-      "image": "https://images.unsplash.com/photo-1553279768-865429fa0078",
-      "category": "fruits",
-      "stock": 100,
-      "unit": "1kg",
-      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
-      "sellerName": "Rani",
-      "deliveryMinutes": 12,
-      "description": "Sweet mangoes",
-      "isTrending": false,
-      "isRecommended": false,
-      "variants": []
-    },
-    {
-      "id": "e058359d-98d3-4a87-aff6-3683c75bd55b",
-      "name": "Sweet Lime",
-      "price": 70,
-      "originalPrice": 90,
-      "image": "https://images.unsplash.com/photo-1550258987-190a2d41a8ba",
-      "category": "fruits",
-      "stock": 100,
-      "unit": "1kg",
-      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
-      "sellerName": "Rani",
-      "deliveryMinutes": 10,
-      "description": "Fresh sweet lime",
-      "isTrending": false,
-      "isRecommended": false,
-      "variants": []
-    },
-    {
-      "id": "4ec84f12-0374-4c2a-902f-e7229d5b77fa",
+      "id": "2a0c5767-4041-4113-bd6b-52c3b0107d9c",
       "name": "Egg Biryani",
       "price": 225,
       "originalPrice": 225,
@@ -47,23 +13,6 @@
       "sellerName": "Bamboo Restaurant",
       "deliveryMinutes": 10,
       "description": "Egg Biryani",
-      "isTrending": false,
-      "isRecommended": false,
-      "variants": []
-    },
-    {
-      "id": "ff06a09d-ecbd-429f-901c-ae7a1c24f02f",
-      "name": "Grapes",
-      "price": 140,
-      "originalPrice": 170,
-      "image": "https://images.unsplash.com/photo-1537640538966-79f369143f8f",
-      "category": "fruits",
-      "stock": 100,
-      "unit": "500g",
-      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
-      "sellerName": "Rani",
-      "deliveryMinutes": 9,
-      "description": "Seedless grapes",
       "isTrending": false,
       "isRecommended": false,
       "variants": []
@@ -86,6 +35,23 @@
       "variants": []
     },
     {
+      "id": "e058359d-98d3-4a87-aff6-3683c75bd55b",
+      "name": "Sweet Lime",
+      "price": 70,
+      "originalPrice": 90,
+      "image": "https://images.unsplash.com/photo-1550258987-190a2d41a8ba",
+      "category": "fruits",
+      "stock": 100,
+      "unit": "1kg",
+      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
+      "sellerName": "Rani",
+      "deliveryMinutes": 10,
+      "description": "Fresh sweet lime",
+      "isTrending": false,
+      "isRecommended": false,
+      "variants": []
+    },
+    {
       "id": "f130cac2-74e4-4b0d-93d9-408463414fb1",
       "name": "Watermelon",
       "price": 70,
@@ -103,52 +69,18 @@
       "variants": []
     },
     {
-      "id": "a0f789c2-be09-432a-af9c-75951572ff1a",
-      "name": "Coconut",
-      "price": 45,
-      "originalPrice": 60,
-      "image": "https://images.unsplash.com/photo-1620189507186-7d5c6b9f6e1d",
+      "id": "069c69e9-521e-4632-8180-1e6eea53e62b",
+      "name": "Mango",
+      "price": 180,
+      "originalPrice": 220,
+      "image": "https://images.unsplash.com/photo-1553279768-865429fa0078",
       "category": "fruits",
       "stock": 100,
-      "unit": "1 piece",
+      "unit": "1kg",
       "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
       "sellerName": "Rani",
-      "deliveryMinutes": 10,
-      "description": "Fresh coconut",
-      "isTrending": false,
-      "isRecommended": false,
-      "variants": []
-    },
-    {
-      "id": "1f015aef-979b-4206-a2ae-6a188cfa87b7",
-      "name": "Banana",
-      "price": 60,
-      "originalPrice": 80,
-      "image": "https://images.unsplash.com/photo-1574226516831-e1dff420e37f",
-      "category": "fruits",
-      "stock": 100,
-      "unit": "1 dozen",
-      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
-      "sellerName": "Rani",
-      "deliveryMinutes": 8,
-      "description": "Fresh bananas",
-      "isTrending": false,
-      "isRecommended": false,
-      "variants": []
-    },
-    {
-      "id": "2a0c5767-4041-4113-bd6b-52c3b0107d9c",
-      "name": "Egg Biryani",
-      "price": 225,
-      "originalPrice": 225,
-      "image": "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500",
-      "category": "restaurants",
-      "stock": 0,
-      "unit": "plate",
-      "sellerId": "0aaa8167-5261-4670-a5fb-265cbc3b7910",
-      "sellerName": "Bamboo Restaurant",
-      "deliveryMinutes": 10,
-      "description": "Egg Biryani",
+      "deliveryMinutes": 12,
+      "description": "Sweet mangoes",
       "isTrending": false,
       "isRecommended": false,
       "variants": []
@@ -171,18 +103,18 @@
       "variants": []
     },
     {
-      "id": "6c86440d-5299-4427-8385-503002f38245",
-      "name": "Orange",
-      "price": 90,
-      "originalPrice": 110,
-      "image": "https://images.unsplash.com/photo-1582979512210-99b6a53386f9",
+      "id": "a0f789c2-be09-432a-af9c-75951572ff1a",
+      "name": "Coconut",
+      "price": 45,
+      "originalPrice": 60,
+      "image": "https://images.unsplash.com/photo-1620189507186-7d5c6b9f6e1d",
       "category": "fruits",
       "stock": 100,
-      "unit": "1kg",
+      "unit": "1 piece",
       "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
       "sellerName": "Rani",
       "deliveryMinutes": 10,
-      "description": "Juicy oranges",
+      "description": "Fresh coconut",
       "isTrending": false,
       "isRecommended": false,
       "variants": []
@@ -205,6 +137,57 @@
       "variants": []
     },
     {
+      "id": "4ec84f12-0374-4c2a-902f-e7229d5b77fa",
+      "name": "Egg Biryani",
+      "price": 225,
+      "originalPrice": 225,
+      "image": "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500",
+      "category": "restaurants",
+      "stock": 0,
+      "unit": "plate",
+      "sellerId": "0aaa8167-5261-4670-a5fb-265cbc3b7910",
+      "sellerName": "Bamboo Restaurant",
+      "deliveryMinutes": 10,
+      "description": "Egg Biryani",
+      "isTrending": false,
+      "isRecommended": false,
+      "variants": []
+    },
+    {
+      "id": "6c86440d-5299-4427-8385-503002f38245",
+      "name": "Orange",
+      "price": 90,
+      "originalPrice": 110,
+      "image": "https://images.unsplash.com/photo-1582979512210-99b6a53386f9",
+      "category": "fruits",
+      "stock": 100,
+      "unit": "1kg",
+      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
+      "sellerName": "Rani",
+      "deliveryMinutes": 10,
+      "description": "Juicy oranges",
+      "isTrending": false,
+      "isRecommended": false,
+      "variants": []
+    },
+    {
+      "id": "1f015aef-979b-4206-a2ae-6a188cfa87b7",
+      "name": "Banana",
+      "price": 60,
+      "originalPrice": 80,
+      "image": "https://images.unsplash.com/photo-1574226516831-e1dff420e37f",
+      "category": "fruits",
+      "stock": 100,
+      "unit": "1 dozen",
+      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
+      "sellerName": "Rani",
+      "deliveryMinutes": 8,
+      "description": "Fresh bananas",
+      "isTrending": false,
+      "isRecommended": false,
+      "variants": []
+    },
+    {
       "id": "9f3e3909-6184-415c-846b-5a3c9f135f69",
       "name": "Pear",
       "price": 160,
@@ -217,6 +200,77 @@
       "sellerName": "Rani",
       "deliveryMinutes": 10,
       "description": "Fresh pears",
+      "isTrending": false,
+      "isRecommended": false,
+      "variants": []
+    },
+    {
+      "id": "ff06a09d-ecbd-429f-901c-ae7a1c24f02f",
+      "name": "Grapes",
+      "price": 140,
+      "originalPrice": 170,
+      "image": "https://images.unsplash.com/photo-1537640538966-79f369143f8f",
+      "category": "fruits",
+      "stock": 100,
+      "unit": "500g",
+      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
+      "sellerName": "Rani",
+      "deliveryMinutes": 9,
+      "description": "Seedless grapes",
+      "isTrending": false,
+      "isRecommended": false,
+      "variants": []
+    },
+    {
+      "id": "f99a3912-f610-46e0-9860-11795d142b3e",
+      "name": "Guava",
+      "price": 80,
+      "originalPrice": 100,
+      "image": "https://images.unsplash.com/photo-1594282486552-05a1f0a1c4f4",
+      "category": "fruits",
+      "stock": 100,
+      "unit": "1kg",
+      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
+      "sellerName": "Rani",
+      "deliveryMinutes": 10,
+      "description": "Fresh guava",
+      "isTrending": false,
+      "isRecommended": false,
+      "variants": []
+    },
+    {
+      "id": "f5efeb0d-314e-4bd9-a6b3-3511b970c192",
+      "name": "Premium Lean Mutton Curry Cut",
+      "price": 450,
+      "originalPrice": 520,
+      "image": "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=200",
+      "category": "fresh-meat",
+      "stock": 91,
+      "unit": "500 g",
+      "sellerId": "a655f43e-0d9a-4f7b-ae26-d89c9b9a8750",
+      "sellerName": "Fresh Mart",
+      "deliveryMinutes": 18,
+      "description": "Succulent pieces of premium meat, carefully selected curry cuts from bone-in lamb/mutton. Rich in protein.",
+      "isTrending": false,
+      "isRecommended": true,
+      "variants": [
+        "500 g",
+        "1 kg"
+      ]
+    },
+    {
+      "id": "db551e17-1ca1-4626-a102-2a79a1175f67",
+      "name": "Papaya",
+      "price": 55,
+      "originalPrice": 75,
+      "image": "https://images.unsplash.com/photo-1517282009859-f000ec3b26fe",
+      "category": "fruits",
+      "stock": 0,
+      "unit": "1 piece",
+      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
+      "sellerName": "Rani",
+      "deliveryMinutes": 10,
+      "description": "Fresh papaya",
       "isTrending": false,
       "isRecommended": false,
       "variants": []
@@ -275,63 +329,69 @@
         "500 g",
         "1 kg"
       ]
-    },
-    {
-      "id": "f99a3912-f610-46e0-9860-11795d142b3e",
-      "name": "Guava",
-      "price": 80,
-      "originalPrice": 100,
-      "image": "https://images.unsplash.com/photo-1594282486552-05a1f0a1c4f4",
-      "category": "fruits",
-      "stock": 100,
-      "unit": "1kg",
-      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
-      "sellerName": "Rani",
-      "deliveryMinutes": 10,
-      "description": "Fresh guava",
-      "isTrending": false,
-      "isRecommended": false,
-      "variants": []
-    },
-    {
-      "id": "f5efeb0d-314e-4bd9-a6b3-3511b970c192",
-      "name": "Premium Lean Mutton Curry Cut",
-      "price": 450,
-      "originalPrice": 520,
-      "image": "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=200",
-      "category": "fresh-meat",
-      "stock": 91,
-      "unit": "500 g",
-      "sellerId": "a655f43e-0d9a-4f7b-ae26-d89c9b9a8750",
-      "sellerName": "Fresh Mart",
-      "deliveryMinutes": 18,
-      "description": "Succulent pieces of premium meat, carefully selected curry cuts from bone-in lamb/mutton. Rich in protein.",
-      "isTrending": false,
-      "isRecommended": true,
-      "variants": [
-        "500 g",
-        "1 kg"
-      ]
-    },
-    {
-      "id": "db551e17-1ca1-4626-a102-2a79a1175f67",
-      "name": "Papaya",
-      "price": 55,
-      "originalPrice": 75,
-      "image": "https://images.unsplash.com/photo-1517282009859-f000ec3b26fe",
-      "category": "fruits",
-      "stock": 0,
-      "unit": "1 piece",
-      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
-      "sellerName": "Rani",
-      "deliveryMinutes": 10,
-      "description": "Fresh papaya",
-      "isTrending": false,
-      "isRecommended": false,
-      "variants": []
     }
   ],
   "orders": [
+    {
+      "id": "e198534c-297f-4a13-aa4d-3563ee2e670d",
+      "customerPhone": "7032865951",
+      "customerName": "Akky ",
+      "items": [
+        {
+          "product": {
+            "id": "069c69e9-521e-4632-8180-1e6eea53e62b",
+            "name": "Mango",
+            "price": 180,
+            "image": "",
+            "category": "",
+            "stock": 99,
+            "unit": "1 unit",
+            "sellerId": "",
+            "sellerName": "",
+            "deliveryMinutes": 10,
+            "description": ""
+          },
+          "productId": "069c69e9-521e-4632-8180-1e6eea53e62b",
+          "productName": "Mango",
+          "price": 180,
+          "quantity": 1,
+          "total": 180
+        },
+        {
+          "product": {
+            "id": "6c86440d-5299-4427-8385-503002f38245",
+            "name": "Orange",
+            "price": 90,
+            "image": "",
+            "category": "",
+            "stock": 99,
+            "unit": "1 unit",
+            "sellerId": "",
+            "sellerName": "",
+            "deliveryMinutes": 10,
+            "description": ""
+          },
+          "productId": "6c86440d-5299-4427-8385-503002f38245",
+          "productName": "Orange",
+          "price": 90,
+          "quantity": 1,
+          "total": 90
+        }
+      ],
+      "subtotal": 270,
+      "deliveryFee": 0,
+      "discount": 0,
+      "total": 270,
+      "status": "placed",
+      "createdAt": "2026-06-20T07:13:27.391Z",
+      "address": "5-2-99/1venkestwarala",
+      "paymentMethod": "COD",
+      "paymentStatus": "pending",
+      "packingStatus": "pending",
+      "otp": "7267",
+      "deliveryTip": 0,
+      "sellerId": "f81ea413-ce7d-4211-a95e-250d7485a56d"
+    },
     {
       "id": "62cdbc7a-d6b4-4871-a628-48abde307ab5",
       "customerPhone": "8186999869",
@@ -457,17 +517,6 @@
   ],
   "sellers": [
     {
-      "id": "f81ea413-ce7d-4211-a95e-250d7485a56d",
-      "userId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
-      "storeName": "Rani (f81e)",
-      "ownerName": "Rani",
-      "phone": "9037160371",
-      "email": "seller_bf_f81ea413@swiftcart.com",
-      "address": "Standard Registered Zone",
-      "status": "approved",
-      "createdAt": "2026-06-13T07:15:31.638Z"
-    },
-    {
       "id": "22912f2f-7230-4785-b819-faf94589f459",
       "userId": "22912f2f-7230-4785-b819-faf94589f459",
       "storeName": "rani (2291)",
@@ -545,6 +594,17 @@
       "createdAt": "2026-06-13T07:12:58.771Z"
     },
     {
+      "id": "f81ea413-ce7d-4211-a95e-250d7485a56d",
+      "userId": "f81ea413-ce7d-4211-a95e-250d7485a56d",
+      "storeName": "Rani (f81e)",
+      "ownerName": "Rani",
+      "phone": "9037160371",
+      "email": "seller_bf_f81ea413@swiftcart.com",
+      "address": "Standard Registered Zone",
+      "status": "approved",
+      "createdAt": "2026-06-13T07:15:31.638Z"
+    },
+    {
       "id": "d710b4bd-dfdd-4207-8ebc-6c2ba4b39147",
       "userId": "d710b4bd-dfdd-4207-8ebc-6c2ba4b39147",
       "storeName": "fruit shop",
@@ -591,24 +651,6 @@
   ],
   "riders": [
     {
-      "id": "169b5ba0-aa37-4b6a-a478-9e5e8a20f062",
-      "name": "Arjun ",
-      "phone": "8186999869",
-      "vehicleNumber": "DL-79-Q-8256",
-      "status": "available",
-      "earnings": 0,
-      "createdAt": "2026-06-13T07:15:31.440Z"
-    },
-    {
-      "id": "f70f289d-3264-4865-aa5b-123d7f847223",
-      "name": "Arjun ",
-      "phone": "8186999434",
-      "vehicleNumber": "DL-93-Q-3390",
-      "status": "available",
-      "earnings": 0,
-      "createdAt": "2026-06-13T07:16:44.883Z"
-    },
-    {
       "id": "ee139d2f-ba93-4c26-9f5c-b066508e05d8",
       "name": "Arjun ",
       "phone": "8186139293",
@@ -625,45 +667,27 @@
       "status": "available",
       "earnings": 0,
       "createdAt": "2026-06-13T07:15:31.440Z"
+    },
+    {
+      "id": "169b5ba0-aa37-4b6a-a478-9e5e8a20f062",
+      "name": "Arjun ",
+      "phone": "8186999869",
+      "vehicleNumber": "DL-79-Q-8256",
+      "status": "available",
+      "earnings": 0,
+      "createdAt": "2026-06-13T07:15:31.440Z"
+    },
+    {
+      "id": "f70f289d-3264-4865-aa5b-123d7f847223",
+      "name": "Arjun ",
+      "phone": "8186999434",
+      "vehicleNumber": "DL-93-Q-3390",
+      "status": "available",
+      "earnings": 0,
+      "createdAt": "2026-06-13T07:16:44.883Z"
     }
   ],
   "categories": [
-    {
-      "id": "dairy-eggs",
-      "name": "Dairy, Bread & Eggs",
-      "icon": "Egg",
-      "color": "bg-blue-50 text-blue-600"
-    },
-    {
-      "id": "munchies",
-      "name": "Munchies & Chips",
-      "icon": "Cookie",
-      "color": "bg-orange-50 text-orange-600"
-    },
-    {
-      "id": "drinks",
-      "name": "Cold Drinks & Juices",
-      "icon": "CupSoda",
-      "color": "bg-cyan-50 text-cyan-600"
-    },
-    {
-      "id": "instant",
-      "name": "Instant & Frozen",
-      "icon": "Soup",
-      "color": "bg-amber-50 text-amber-600"
-    },
-    {
-      "id": "bakery",
-      "name": "Bakery & Biscuits",
-      "icon": "Croissant",
-      "color": "bg-rose-50 text-rose-600"
-    },
-    {
-      "id": "tiffin",
-      "name": "Tiffin",
-      "icon": "Briefcase",
-      "color": "bg-teal-50 text-teal-700 font-bold"
-    },
     {
       "id": "vegetables",
       "name": "Vegetables",
@@ -705,32 +729,55 @@
       "name": "Fruits",
       "icon": "Apple",
       "color": "bg-red-50 text-red-600"
+    },
+    {
+      "id": "dairy-eggs",
+      "name": "Dairy, Bread & Eggs",
+      "icon": "Egg",
+      "color": "bg-blue-50 text-blue-600"
+    },
+    {
+      "id": "munchies",
+      "name": "Munchies & Chips",
+      "icon": "Cookie",
+      "color": "bg-orange-50 text-orange-600"
+    },
+    {
+      "id": "drinks",
+      "name": "Cold Drinks & Juices",
+      "icon": "CupSoda",
+      "color": "bg-cyan-50 text-cyan-600"
+    },
+    {
+      "id": "instant",
+      "name": "Instant & Frozen",
+      "icon": "Soup",
+      "color": "bg-amber-50 text-amber-600"
+    },
+    {
+      "id": "bakery",
+      "name": "Bakery & Biscuits",
+      "icon": "Croissant",
+      "color": "bg-rose-50 text-rose-600"
+    },
+    {
+      "id": "tiffin",
+      "name": "Tiffin",
+      "icon": "Briefcase",
+      "color": "bg-teal-50 text-teal-700 font-bold"
     }
   ],
-  "otps": {},
+  "otps": {
+    "+919999999999": {
+      "otp": "4020",
+      "expiresAt": 1781945731008
+    },
+    "9999999999": {
+      "otp": "4020",
+      "expiresAt": 1781945914217
+    }
+  },
   "users": [
-    {
-      "id": "a8b98755-e930-4738-b9f7-016f25069cf7",
-      "email": "user_a8b98755@swiftcart.com",
-      "phone": "7032898755",
-      "password": "otp_verified_h96im2q2",
-      "role": "customer",
-      "name": "Customer",
-      "createdAt": "2026-06-02T04:07:33.634Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "94e902bd-bdf7-4033-bc20-f394f8873eb9",
-      "email": "user_94e902bd@swiftcart.com",
-      "phone": "8186949027",
-      "password": "otp_verified_nc1ej1vg",
-      "role": "rider",
-      "name": "Arjun ",
-      "createdAt": "2026-06-13T07:15:31.440Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
     {
       "id": "6766a898-3a3c-4710-9436-adc2b63783ff",
       "email": "user_6766a898@dailymart.com",
@@ -765,9 +812,75 @@
       "walletTransactions": []
     },
     {
+      "id": "2766eef1-0542-460e-a709-6bf91ec08562",
+      "email": "customer_+919999999999@dailymart.com",
+      "phone": "919999999999",
+      "password": "otp_verified_ho0wna1n",
+      "role": "customer",
+      "name": "Customer 9999",
+      "createdAt": "2026-06-20T08:20:56.297Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "913c670f-e39e-4d3a-b0ed-fd11e91515f3",
+      "email": "user_913c670f@swiftcart.com",
+      "phone": "7032913670",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
+      "name": "akky",
+      "createdAt": "2026-06-02T04:07:33.634Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
       "id": "1b623402-8513-4b7f-bc53-505d05be159a",
       "email": "user_1b623402@swiftcart.com",
       "phone": "7032162340",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
+      "name": "akky",
+      "createdAt": "2026-06-02T04:07:33.634Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "d84156ce-a85d-4515-aa85-5ac3fc9ee732",
+      "email": "seller_f81ea413-ce7d-4211-a95e-250d7485a56d@swiftcart.com",
+      "phone": "0000000000",
+      "password": "firebase-auth-managed",
+      "role": "seller",
+      "name": "Rani",
+      "createdAt": "2026-06-13T07:12:58.771Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "303e0f1f-20a5-477f-951c-b0227be74e3f",
+      "email": "user_303e0f1f@swiftcart.com",
+      "phone": "9100303012",
+      "password": "otp_verified_290uatkj",
+      "role": "seller",
+      "name": "Rani",
+      "createdAt": "2026-06-02T06:11:38.489Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "c96d15df-e8a5-40e1-998e-7752b2401c2c",
+      "email": "user_c96d15df@dailymart.com",
+      "phone": "7032961585",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
+      "name": "akky",
+      "createdAt": "2026-06-02T04:07:33.634Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "2b83b965-747f-422e-a3b6-af06d124a901",
+      "email": "user_2b83b965@swiftcart.com",
+      "phone": "7032283965",
       "password": "otp_verified_h96im2q2",
       "role": "admin",
       "name": "akky",
@@ -798,28 +911,6 @@
       "walletTransactions": []
     },
     {
-      "id": "d84156ce-a85d-4515-aa85-5ac3fc9ee732",
-      "email": "seller_f81ea413-ce7d-4211-a95e-250d7485a56d@swiftcart.com",
-      "phone": "0000000000",
-      "password": "firebase-auth-managed",
-      "role": "seller",
-      "name": "Rani",
-      "createdAt": "2026-06-13T07:12:58.771Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "2b83b965-747f-422e-a3b6-af06d124a901",
-      "email": "user_2b83b965@swiftcart.com",
-      "phone": "7032283965",
-      "password": "otp_verified_h96im2q2",
-      "role": "admin",
-      "name": "akky",
-      "createdAt": "2026-06-02T04:07:33.634Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
       "id": "f251177b-7e08-4c9e-934a-b0107506aeb1",
       "email": "user_f251177b@dailymart.com",
       "phone": "7032251177",
@@ -837,6 +928,39 @@
       "password": "otp_verified_h96im2q2",
       "role": "admin",
       "name": "akky",
+      "createdAt": "2026-06-02T04:07:33.634Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "a8b98755-e930-4738-b9f7-016f25069cf7",
+      "email": "user_a8b98755@swiftcart.com",
+      "phone": "7032898755",
+      "password": "otp_verified_h96im2q2",
+      "role": "customer",
+      "name": "Customer",
+      "createdAt": "2026-06-02T04:07:33.634Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "94e902bd-bdf7-4033-bc20-f394f8873eb9",
+      "email": "user_94e902bd@swiftcart.com",
+      "phone": "8186949027",
+      "password": "otp_verified_nc1ej1vg",
+      "role": "rider",
+      "name": "Arjun ",
+      "createdAt": "2026-06-13T07:15:31.440Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "2c905b15-9c06-4b16-bb96-b546a95bf9cd",
+      "email": "user_2c905b15@dailymart.com",
+      "phone": "7032290515",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
+      "name": "Akky ",
       "createdAt": "2026-06-02T04:07:33.634Z",
       "walletBalance": 0,
       "walletTransactions": []
@@ -1107,157 +1231,13 @@
       "walletTransactions": []
     },
     {
-      "id": "169b5ba0-aa37-4b6a-a478-9e5e8a20f062",
-      "email": "rider_90e713f3-99e7-4934-a8b7-51c8fc76bb9f@swiftcart.com",
-      "phone": "8186999869",
-      "password": "otp_verified_nc1ej1vg",
-      "role": "rider",
-      "name": "Arjun ",
-      "createdAt": "2026-06-13T07:15:31.440Z",
-      "walletBalance": 50,
-      "walletTransactions": [
-        {
-          "id": "be1bfb65-f78f-4906-acdc-d0edbf83e7fa",
-          "type": "credit",
-          "amount": 50,
-          "description": "Earnings for delivering Order #SC-794838",
-          "status": "success",
-          "gateway": "System",
-          "referenceId": "SC-794838",
-          "createdAt": "2026-06-08T14:48:59.839Z"
-        }
-      ],
-      "fcmToken": "fcm_tok_rider_1MV5RYT4S_android"
-    },
-    {
-      "id": "d965396d-ed13-4490-bf7e-09ae9f0d9c84",
-      "email": "user_d965396d@swiftcart.com",
-      "phone": "7032965396",
-      "password": "otp_verified_h96im2q2",
-      "role": "admin",
-      "name": "akky",
-      "createdAt": "2026-06-02T04:07:33.634Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "f81ea413-ce7d-4211-a95e-250d7485a56d",
-      "email": "seller_bf_f81ea413@swiftcart.com",
-      "phone": "9037160371",
-      "password": "demo-verified-session-password",
-      "role": "seller",
-      "name": "Rani",
-      "createdAt": "2026-06-13T07:15:31.638Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "c7dfc06e-7943-4707-b62c-4731a254ef96",
-      "email": "user_c7dfc06e@swiftcart.com",
-      "phone": "7032706794",
-      "password": "otp_verified_h96im2q2",
-      "role": "admin",
-      "name": "akky",
-      "createdAt": "2026-06-02T04:07:33.634Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "0aaa8167-5261-4670-a5fb-265cbc3b7910",
-      "email": "user_0aaa8167@swiftcart.com",
-      "phone": "9490345346",
-      "password": "bamboo",
-      "role": "seller",
-      "name": "bamboo restaurant",
-      "createdAt": "2026-06-14T08:23:08.000Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "56561508-4f05-4082-a144-4e0f1979a26c",
-      "email": "user_56561508@swiftcart.com",
-      "phone": "7032565615",
-      "password": "otp_verified_h96im2q2",
-      "role": "admin",
-      "name": "akky",
-      "createdAt": "2026-06-02T04:07:33.634Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "2406f311-85d2-4192-ac6d-a008459fcb46",
-      "email": "customer_7032865951_2406f@swiftcart.com",
-      "phone": "7032865110",
-      "password": "otp_verified_h96im2q2",
-      "role": "admin",
-      "name": "Customer",
-      "createdAt": "2026-06-02T04:23:45.148Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "6dd18680-a6c8-4c6f-bdd8-4661757a5c29",
-      "email": "user_6dd18680@swiftcart.com",
-      "phone": "9100618680",
-      "password": "otp_verified_290uatkj",
-      "role": "seller",
-      "name": "Rani",
-      "createdAt": "2026-06-02T06:11:38.489Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "d6a02b7f-b6dd-4a62-8a82-479d39796e4d",
-      "email": "user_d6a02b7f@swiftcart.com",
-      "phone": "7032602764",
+      "id": "b74e23d5-0222-48ea-8524-013c704a47e6",
+      "email": "user_b74e23d5@swiftcart.com",
+      "phone": "7032742350",
       "password": "otp_verified_h96im2q2",
       "role": "customer",
       "name": "Customer",
       "createdAt": "2026-06-02T04:07:33.634Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "0ca3bda5-d426-4372-8db7-3a5c7f4f7aca",
-      "email": "user_0ca3bda5@swiftcart.com",
-      "phone": "7032035426",
-      "password": "otp_verified_h96im2q2",
-      "role": "admin",
-      "name": "akky",
-      "createdAt": "2026-06-02T04:07:33.634Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "7aba9119-ab7e-41f6-9821-cdbc0a22c41a",
-      "email": "user_7aba9119@swiftcart.com",
-      "phone": "7032791197",
-      "password": "otp_verified_h96im2q2",
-      "role": "admin",
-      "name": "Rani",
-      "createdAt": "2026-06-02T04:07:33.634Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "0b23ef8b-3d70-40eb-9ee8-5f55ce5aea40",
-      "email": "user_0b23ef8b@swiftcart.com",
-      "phone": "7032023837",
-      "password": "otp_verified_h96im2q2",
-      "role": "admin",
-      "name": "akky",
-      "createdAt": "2026-06-02T04:07:33.634Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "3899b380-c57c-4b2d-971a-112574113bcf",
-      "email": "user_3899b380@swiftcart.com",
-      "phone": "7032389938",
-      "password": "otp_verified_heelubzx",
-      "role": "customer",
-      "name": "akky",
-      "createdAt": "2026-06-08T14:45:14.162Z",
       "walletBalance": 0,
       "walletTransactions": []
     },
@@ -1284,57 +1264,24 @@
       ]
     },
     {
-      "id": "89847367-0aab-41b4-8048-a897786565b2",
-      "email": "customer_8186999896@swiftcart.com",
-      "phone": "8186999896",
-      "password": "otp_verified_uhvgcfxw",
-      "role": "customer",
-      "name": "Arjun ",
-      "createdAt": "2026-06-09T05:58:43.960Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "ca5962bc-fa17-4623-a39a-fa4b9a11af2e",
-      "email": "user_ca5962bc@swiftcart.com",
-      "phone": "7032596217",
+      "id": "0ca3bda5-d426-4372-8db7-3a5c7f4f7aca",
+      "email": "user_0ca3bda5@swiftcart.com",
+      "phone": "7032035426",
       "password": "otp_verified_h96im2q2",
       "role": "admin",
-      "name": "Akky",
+      "name": "akky",
       "createdAt": "2026-06-02T04:07:33.634Z",
       "walletBalance": 0,
       "walletTransactions": []
     },
     {
-      "id": "8bb7d9e3-7467-41e1-b1e2-6cbf9a90dc13",
-      "email": "user_8bb7d9e3@swiftcart.com",
-      "phone": "9100879374",
-      "password": "otp_verified_290uatkj",
-      "role": "customer",
-      "name": "Customer",
-      "createdAt": "2026-06-02T06:11:38.489Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "9edcddde-fa77-4f29-94c3-8482de275c41",
-      "email": "customer_7032865958@swiftcart.com",
-      "phone": "7032865958",
-      "password": "otp_verified_heelubzx",
-      "role": "customer",
+      "id": "0b23ef8b-3d70-40eb-9ee8-5f55ce5aea40",
+      "email": "user_0b23ef8b@swiftcart.com",
+      "phone": "7032023837",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
       "name": "akky",
-      "createdAt": "2026-06-08T14:45:14.162Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "0c38ac20-068f-4f2e-b18f-4b77c9fe7231",
-      "email": "customer_7032865988@swiftcart.com",
-      "phone": "7032865988",
-      "password": "otp_verified_v32pj1ej",
-      "role": "customer",
-      "name": "yash",
-      "createdAt": "2026-06-09T05:43:38.937Z",
+      "createdAt": "2026-06-02T04:07:33.634Z",
       "walletBalance": 0,
       "walletTransactions": []
     },
@@ -1350,14 +1297,36 @@
       "walletTransactions": []
     },
     {
-      "id": "15c05636-0ca8-4c04-a7fe-0f72a57eedf1",
-      "email": "customer_8190034970@swiftcart.com",
-      "phone": "8190034970",
-      "password": "otp_verified_a9zvtyk9",
+      "id": "8bb7d9e3-7467-41e1-b1e2-6cbf9a90dc13",
+      "email": "user_8bb7d9e3@swiftcart.com",
+      "phone": "9100879374",
+      "password": "otp_verified_290uatkj",
       "role": "customer",
-      "name": "arjun",
-      "createdAt": "2026-06-09T05:44:06.567Z",
-      "walletBalance": 1000,
+      "name": "Customer",
+      "createdAt": "2026-06-02T06:11:38.489Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "d965396d-ed13-4490-bf7e-09ae9f0d9c84",
+      "email": "user_d965396d@swiftcart.com",
+      "phone": "7032965396",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
+      "name": "akky",
+      "createdAt": "2026-06-02T04:07:33.634Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "89847367-0aab-41b4-8048-a897786565b2",
+      "email": "customer_8186999896@swiftcart.com",
+      "phone": "8186999896",
+      "password": "otp_verified_uhvgcfxw",
+      "role": "customer",
+      "name": "Arjun ",
+      "createdAt": "2026-06-09T05:58:43.960Z",
+      "walletBalance": 0,
       "walletTransactions": []
     },
     {
@@ -1372,17 +1341,182 @@
       "walletTransactions": []
     },
     {
+      "id": "3899b380-c57c-4b2d-971a-112574113bcf",
+      "email": "user_3899b380@swiftcart.com",
+      "phone": "7032389938",
+      "password": "otp_verified_heelubzx",
+      "role": "customer",
+      "name": "akky",
+      "createdAt": "2026-06-08T14:45:14.162Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "f81ea413-ce7d-4211-a95e-250d7485a56d",
+      "email": "seller_bf_f81ea413@swiftcart.com",
+      "phone": "9037160371",
+      "password": "demo-verified-session-password",
+      "role": "seller",
+      "name": "Rani",
+      "createdAt": "2026-06-13T07:15:31.638Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "0c38ac20-068f-4f2e-b18f-4b77c9fe7231",
+      "email": "customer_7032865988@swiftcart.com",
+      "phone": "7032865988",
+      "password": "otp_verified_v32pj1ej",
+      "role": "customer",
+      "name": "yash",
+      "createdAt": "2026-06-09T05:43:38.937Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "15c05636-0ca8-4c04-a7fe-0f72a57eedf1",
+      "email": "customer_8190034970@swiftcart.com",
+      "phone": "8190034970",
+      "password": "otp_verified_a9zvtyk9",
+      "role": "customer",
+      "name": "arjun",
+      "createdAt": "2026-06-09T05:44:06.567Z",
+      "walletBalance": 1000,
+      "walletTransactions": []
+    },
+    {
+      "id": "0aaa8167-5261-4670-a5fb-265cbc3b7910",
+      "email": "user_0aaa8167@swiftcart.com",
+      "phone": "9490345346",
+      "password": "bamboo",
+      "role": "seller",
+      "name": "bamboo restaurant",
+      "createdAt": "2026-06-14T08:23:08.000Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "9edcddde-fa77-4f29-94c3-8482de275c41",
+      "email": "customer_7032865958@swiftcart.com",
+      "phone": "7032865958",
+      "password": "otp_verified_heelubzx",
+      "role": "customer",
+      "name": "akky",
+      "createdAt": "2026-06-08T14:45:14.162Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "7aba9119-ab7e-41f6-9821-cdbc0a22c41a",
+      "email": "user_7aba9119@swiftcart.com",
+      "phone": "7032791197",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
+      "name": "Rani",
+      "createdAt": "2026-06-02T04:07:33.634Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "6dd18680-a6c8-4c6f-bdd8-4661757a5c29",
+      "email": "user_6dd18680@swiftcart.com",
+      "phone": "9100618680",
+      "password": "otp_verified_290uatkj",
+      "role": "seller",
+      "name": "Rani",
+      "createdAt": "2026-06-02T06:11:38.489Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "2406f311-85d2-4192-ac6d-a008459fcb46",
+      "email": "customer_7032865951_2406f@swiftcart.com",
+      "phone": "7032865110",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
+      "name": "Customer",
+      "createdAt": "2026-06-02T04:23:45.148Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "167b2bba-3946-484a-885b-ac08946f9a17",
+      "email": "user_167b2bba@swiftcart.com",
+      "phone": "7032167239",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
+      "name": "akky",
+      "createdAt": "2026-06-02T04:07:33.634Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
       "id": "e545b4d0-62d4-4bfc-afcf-cf88eee98705",
       "email": "customer_7032865951@swiftcart.com",
       "phone": "7032865951",
       "password": "otp_verified_h96im2q2",
       "role": "admin",
-      "name": "akky",
+      "name": "Akky ",
       "createdAt": "2026-06-02T04:07:33.634Z",
       "walletBalance": 1000,
       "walletTransactions": [],
-      "fcmToken": "fcm_tok_admin_AH6RFJDZW_android",
-      "uuid": "c96d15df-e8a5-40e1-998e-7752b2401c2c"
+      "fcmToken": "fcm_tok_admin_AH6RFJDZW_android"
+    },
+    {
+      "id": "169b5ba0-aa37-4b6a-a478-9e5e8a20f062",
+      "email": "rider_90e713f3-99e7-4934-a8b7-51c8fc76bb9f@swiftcart.com",
+      "phone": "8186999869",
+      "password": "otp_verified_nc1ej1vg",
+      "role": "rider",
+      "name": "Arjun ",
+      "createdAt": "2026-06-13T07:15:31.440Z",
+      "walletBalance": 50,
+      "walletTransactions": [
+        {
+          "id": "be1bfb65-f78f-4906-acdc-d0edbf83e7fa",
+          "type": "credit",
+          "amount": 50,
+          "description": "Earnings for delivering Order #SC-794838",
+          "status": "success",
+          "gateway": "System",
+          "referenceId": "SC-794838",
+          "createdAt": "2026-06-08T14:48:59.839Z"
+        }
+      ],
+      "fcmToken": "fcm_tok_rider_1MV5RYT4S_android"
+    },
+    {
+      "id": "56561508-4f05-4082-a144-4e0f1979a26c",
+      "email": "user_56561508@swiftcart.com",
+      "phone": "7032565615",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
+      "name": "akky",
+      "createdAt": "2026-06-02T04:07:33.634Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "c7dfc06e-7943-4707-b62c-4731a254ef96",
+      "email": "user_c7dfc06e@swiftcart.com",
+      "phone": "7032706794",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
+      "name": "akky",
+      "createdAt": "2026-06-02T04:07:33.634Z",
+      "walletBalance": 0,
+      "walletTransactions": []
+    },
+    {
+      "id": "ca5962bc-fa17-4623-a39a-fa4b9a11af2e",
+      "email": "user_ca5962bc@swiftcart.com",
+      "phone": "7032596217",
+      "password": "otp_verified_h96im2q2",
+      "role": "admin",
+      "name": "Akky",
+      "createdAt": "2026-06-02T04:07:33.634Z",
+      "walletBalance": 0,
+      "walletTransactions": []
     },
     {
       "id": "9a2c474c-bc0c-4627-ae4b-a0c07e7403d3",
@@ -1396,23 +1530,12 @@
       "walletTransactions": []
     },
     {
-      "id": "b74e23d5-0222-48ea-8524-013c704a47e6",
-      "email": "user_b74e23d5@swiftcart.com",
-      "phone": "7032742350",
+      "id": "d6a02b7f-b6dd-4a62-8a82-479d39796e4d",
+      "email": "user_d6a02b7f@swiftcart.com",
+      "phone": "7032602764",
       "password": "otp_verified_h96im2q2",
       "role": "customer",
       "name": "Customer",
-      "createdAt": "2026-06-02T04:07:33.634Z",
-      "walletBalance": 0,
-      "walletTransactions": []
-    },
-    {
-      "id": "167b2bba-3946-484a-885b-ac08946f9a17",
-      "email": "user_167b2bba@swiftcart.com",
-      "phone": "7032167239",
-      "password": "otp_verified_h96im2q2",
-      "role": "admin",
-      "name": "akky",
       "createdAt": "2026-06-02T04:07:33.634Z",
       "walletBalance": 0,
       "walletTransactions": []

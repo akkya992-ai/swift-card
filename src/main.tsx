@@ -27,11 +27,11 @@ addDiagEntry('info', '🏁 STAGE 1: src/main.tsx loaded by browser engine.');
 // Global Fetch Interceptor to support native Capacitor builds on physical Android devices
 if (typeof window !== 'undefined') {
   addDiagEntry('info', '⚙️ STAGE 2: Evaluating execution environment features.');
-  const isCapacitor = !!((window as any).Capacitor || 
-                      window.location.hostname === 'localhost' || 
-                      window.location.hostname === '127.0.0.1' || 
-                      window.location.protocol === 'file:' ||
-                      window.location.protocol === 'capacitor:');
+  const isCapacitor = typeof window !== 'undefined' && (
+    window.location.protocol === 'file:' ||
+    window.location.protocol === 'capacitor:' ||
+    !!(window as any).Capacitor?.isNativePlatform?.()
+  );
   
   // High-fidelity User Agent & System inspection for APK behavior analysis
   const userAgentStr = navigator.userAgent || '';
@@ -60,26 +60,40 @@ if (typeof window !== 'undefined') {
   });
 
   // Sourced from local storage config or defaulting to the current Cloud Run sandbox URI
-  let remoteApiBase = localStorage.getItem('swiftcart_api_base_override') || '';
-  
+  let remoteApiBase = '';
+  if (isCapacitor) {
+    remoteApiBase = localStorage.getItem('swiftcart_api_base_override') || '';
+  } else {
+    remoteApiBase = '';
+  }
+
+  const apiBase = isCapacitor ? remoteApiBase : window.location.origin;
+  console.log('API BASE', apiBase);
+  console.log('IS CAPACITOR', isCapacitor);
+
+  const isPrereleaseOrDevWorkspace = typeof window !== 'undefined' && 
+    (window.location.hostname.includes('ais-dev-') || 
+     window.location.hostname.includes('ais-pre-') || 
+     window.location.hostname.includes('ai.studio') ||
+     window.location.hostname.includes('makersuite'));
+
   // Safe auto-cleaning of sandbox developer URL overrides when accessed from a normal web browser.
   // This prevents production deployments from sending backend API calls to the private sandbox container.
-  if (!isCapacitor && remoteApiBase && remoteApiBase.includes('ais-dev-')) {
+  if (!isCapacitor && !isPrereleaseOrDevWorkspace && remoteApiBase && (remoteApiBase.includes('ais-dev-') || remoteApiBase.includes('ais-pre-'))) {
     localStorage.removeItem('swiftcart_api_base_override');
     remoteApiBase = '';
     addDiagEntry('info', '🧹 STAGE 3: Automatically cleared stale sandboxed dev API server override from localStorage.');
   }
   
-  if (!remoteApiBase && isCapacitor) {
-    // Dynamic fallback to standard development service container url
-    remoteApiBase = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
-    addDiagEntry('info', '🔌 STAGE 3: Using standard development container callback host fallback.', { remoteApiBase });
-  } else {
+  if (isCapacitor) {
     addDiagEntry('info', '🔌 STAGE 3: Checked API base configuration.', { remoteApiBase: remoteApiBase || 'Direct backend (standard dev/prod ports)' });
+  } else {
+    addDiagEntry('info', '🔌 STAGE 3: Checked API base configuration. Using relative/origin browser URLs.', { apiBase });
   }
 
-  if (remoteApiBase) {
-    addDiagEntry('info', '🛰️ STAGE 4: Attaching interceptor middleware to window.fetch to reroute relative paths.');
+  // Global Fetch Interceptor to support native environments and log all intercepted calls
+  if (typeof window !== 'undefined') {
+    addDiagEntry('info', '🛰️ STAGE 4: Attaching interceptor middleware to window.fetch to route and monitor API activity.');
     const originalFetch = window.fetch;
     
     const customFetch = function (input: any, init?: any): Promise<Response> {
@@ -105,8 +119,17 @@ if (typeof window !== 'undefined') {
             ? '/' + urlStr 
             : urlStr.substring(window.location.origin.length);
 
-        const sanitizedBase = remoteApiBase.replace(/\/+$/, '');
+        const currentApiBase = isCapacitor ? remoteApiBase : window.location.origin;
+        const sanitizedBase = currentApiBase.replace(/\/+$/, '');
         resolvedUrl = `${sanitizedBase}${apiPath}`;
+        
+        const requestUrl = resolvedUrl;
+        console.log({
+          origin: window.location.origin,
+          isCapacitor,
+          apiBase: isCapacitor ? remoteApiBase : window.location.origin,
+          requestUrl
+        });
         
         addDiagEntry('info', `⚡ [INTERCEPT RE-ROUTE] ${urlStr} -> ${resolvedUrl}`);
         

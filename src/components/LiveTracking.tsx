@@ -671,9 +671,9 @@ export default function LiveTracking({
                 <div className="p-1 px-1.5 bg-white border border-slate-200 rounded-xl shrink-0 shadow-xs">
                   <img
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=95x95&data=${encodeURIComponent(
-                      typeof window !== 'undefined' && !window.location.host.includes('localhost') 
+                      typeof window !== 'undefined'
                         ? window.location.origin 
-                        : "https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app"
+                        : ""
                     )}`}
                     alt="Scan Live Link"
                     className="w-16 h-16 object-contain"

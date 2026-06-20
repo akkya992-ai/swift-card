@@ -479,6 +479,15 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
     if (!firebaseActive || !enableRealOtp) {
       // Mock Sandbox flow - verify internally without showing any codes or prompts to user
       try {
+        const isCapacitor = typeof window !== 'undefined' && (
+          window.location.protocol === 'file:' ||
+          window.location.protocol === 'capacitor:' ||
+          !!(window as any).Capacitor?.isNativePlatform?.()
+        );
+        const apiBase = isCapacitor ? (localStorage.getItem('swiftcart_api_base_override') || '') : window.location.origin;
+        console.log('API BASE', apiBase);
+        console.log('IS CAPACITOR', isCapacitor);
+
         const res = await fetch('/api/auth/send-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -515,15 +524,35 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
         
         onLoginSuccess(verifyData.profile.phone, selectedRole, verifyData.profile);
       } catch (err: any) {
-        const isCapacitor = typeof window !== 'undefined' && !!((window as any).Capacitor || 
-                            window.location.hostname === 'localhost' || 
-                            window.location.hostname === '127.0.0.1' || 
+        const isPrereleaseOrDevWorkspace = typeof window !== 'undefined' && 
+          (window.location.hostname.includes('ais-dev-') || 
+           window.location.hostname.includes('ais-pre-') || 
+           window.location.hostname.includes('ai.studio') ||
+           window.location.hostname.includes('makersuite'));
+        const isCapacitor = typeof window !== 'undefined' && (
                             window.location.protocol === 'file:' ||
-                            window.location.protocol === 'capacitor:');
-        const defaultFallback = isCapacitor ? 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app' : (typeof window !== 'undefined' ? window.location.origin : '');
-        const baseOverride = localStorage.getItem('swiftcart_api_base_override') || defaultFallback;
+                            window.location.protocol === 'capacitor:' ||
+                            !!(window as any).Capacitor?.isNativePlatform?.()
+        );
+        
+        let baseOverride = localStorage.getItem('swiftcart_api_base_override') || '';
+        
+        if (!isCapacitor && !isPrereleaseOrDevWorkspace) {
+          // Force bypass developer sandbox domain values in real production web browsers
+          if (baseOverride && (baseOverride.includes('ais-dev-') || baseOverride.includes('ais-pre-'))) {
+            localStorage.removeItem('swiftcart_api_base_override');
+            baseOverride = '';
+          }
+        }
+        
+        const defaultFallback = isCapacitor ? '' : (typeof window !== 'undefined' ? window.location.origin : '');
+        const finalBase = baseOverride || defaultFallback;
+        const apiBase = finalBase;
+        console.log('API BASE', apiBase);
+        console.log('IS CAPACITOR', isCapacitor);
+
         setError(err.message === 'Failed to fetch' || err.message?.includes('network') || err.message?.includes('timeout')
-          ? `Connection failed. Could not reach server at ${baseOverride}. Please verify your internet connection or tap the Settings gear in the top-right to override the API server IP.\nError: ${err.message}`
+          ? `Connection failed. Could not reach server at ${finalBase}. Please verify your internet connection or tap the Settings gear in the top-right to override the API server IP.\nError: ${err.message}`
           : err.message || 'Simulated verification failed.'
         );
       } finally {
@@ -1464,15 +1493,33 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
                     const btn = e.currentTarget;
                     btn.disabled = true;
                     btn.innerText = "Pinging...";
-                    const isCapacitor = typeof window !== 'undefined' && !!((window as any).Capacitor || 
-                                        window.location.hostname === 'localhost' || 
-                                        window.location.hostname === '127.0.0.1' || 
+                    const isPrereleaseOrDevWorkspace = typeof window !== 'undefined' && 
+                                        (window.location.hostname.includes('ais-dev-') || 
+                                         window.location.hostname.includes('ais-pre-') || 
+                                         window.location.hostname.includes('ai.studio') ||
+                                         window.location.hostname.includes('makersuite'));
+                    const isCapacitor = typeof window !== 'undefined' && (
                                         window.location.protocol === 'file:' ||
-                                        window.location.protocol === 'capacitor:');
-                    const defaultFallback = isCapacitor ? 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app' : (typeof window !== 'undefined' ? window.location.origin : '');
-                    const base = localStorage.getItem('swiftcart_api_base_override') || defaultFallback;
+                                        window.location.protocol === 'capacitor:' ||
+                                        !!(window as any).Capacitor?.isNativePlatform?.()
+                                        );
+                    
+                    let base = localStorage.getItem('swiftcart_api_base_override') || '';
+                    if (!isCapacitor && !isPrereleaseOrDevWorkspace) {
+                      // Prevent sandbox API base leaks on production URLs
+                      if (base && (base.includes('ais-dev-') || base.includes('ais-pre-'))) {
+                        localStorage.removeItem('swiftcart_api_base_override');
+                        base = '';
+                      }
+                    }
+                    
+                    const defaultFallback = isCapacitor ? '' : (typeof window !== 'undefined' ? window.location.origin : '');
+                    const finalPingBase = base || defaultFallback;
+                    const apiBase = finalPingBase;
+                    console.log('API BASE', apiBase);
+                    console.log('IS CAPACITOR', isCapacitor);
                     try {
-                      const res = await fetch(`${base.replace(/\/+$/, '')}/api/health`, { method: 'GET' });
+                      const res = await fetch(`${finalPingBase.replace(/\/+$/, '')}/api/health`, { method: 'GET' });
                       if (res.ok) {
                         alert(`🟢 CONNECTED! Server responded successfully with HTTP ${res.status}`);
                       } else {

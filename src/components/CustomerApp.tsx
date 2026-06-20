@@ -4594,9 +4594,9 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                 <div className="my-5 p-4 bg-slate-50 rounded-2xl border border-slate-150 inline-block relative group shadow-inner">
                   <img
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
-                      typeof window !== 'undefined' && !window.location.host.includes('localhost') 
+                      typeof window !== 'undefined'
                         ? window.location.origin 
-                        : "https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app"
+                        : ""
                     )}`}
                     alt="Daily Mart Mobile App Link QR"
                     className="w-36 h-36 mx-auto rounded-lg object-contain bg-white p-1 transition-transform group-hover:scale-102"
@@ -4629,17 +4629,17 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
 
                 <div className="w-full flex flex-col gap-2">
                   <div className="text-[9.5px] text-slate-400 break-all font-mono bg-white p-2 rounded-xl border border-slate-100 shadow-2xs select-all text-center leading-normal">
-                    {typeof window !== 'undefined' && !window.location.host.includes('localhost') 
+                    {typeof window !== 'undefined'
                       ? window.location.origin 
-                      : "https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app"
+                      : ""
                     }
                   </div>
                   <button
                     type="button"
                     onClick={() => {
-                      const urlToCopy = typeof window !== 'undefined' && !window.location.host.includes('localhost') 
+                      const urlToCopy = typeof window !== 'undefined'
                         ? window.location.origin 
-                        : "https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app";
+                        : "";
                       navigator.clipboard.writeText(urlToCopy);
                       triggerPushNotification("Link Copied! 🔗", "Web entrypoint address successfully loaded onto clipboard.", "success");
                     }}

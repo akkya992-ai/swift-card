@@ -326,6 +326,32 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Clean up stale sandbox/dev API base URLs from localStorage on custom production domains
+    if (typeof window !== 'undefined') {
+      const isCapacitor = typeof window !== 'undefined' && (
+        window.location.protocol === 'file:' ||
+        window.location.protocol === 'capacitor:' ||
+        !!(window as any).Capacitor?.isNativePlatform?.()
+      );
+      const apiBase = isCapacitor ? (localStorage.getItem('swiftcart_api_base_override') || '') : window.location.origin;
+      console.log('API BASE', apiBase);
+      console.log('IS CAPACITOR', isCapacitor);
+      const isPrereleaseOrDevWorkspace = 
+        window.location.hostname.includes('ais-dev-') || 
+        window.location.hostname.includes('ais-pre-') || 
+        window.location.hostname.includes('ai.studio') ||
+        window.location.hostname.includes('makersuite');
+      
+      if (!isCapacitor && !isPrereleaseOrDevWorkspace) {
+        const savedOverride = localStorage.getItem('swiftcart_api_base_override');
+        if (savedOverride && (savedOverride.includes('ais-dev-') || savedOverride.includes('ais-pre-'))) {
+          localStorage.removeItem('swiftcart_api_base_override');
+          const win = window as any;
+          win.__addDiagnosticLog?.('info', `🧹 [STORAGE CLEANUP] Force-cleared stale sandboxed API base override: ${savedOverride}`);
+        }
+      }
+    }
+
     if (typeof window !== 'undefined') {
       const win = window as any;
       win.__addDiagnosticLog?.('info', '📱 React: App container component mounted successfully.');
@@ -366,20 +392,21 @@ export default function App() {
       try {
         let base = '';
         if (typeof window !== 'undefined') {
-          const isCapacitor = !!((window as any).Capacitor || 
-                              window.location.hostname === 'localhost' || 
-                              window.location.hostname === '127.0.0.1' || 
-                              window.location.protocol === 'file:' ||
-                              window.location.protocol === 'capacitor:');
+          const isCapacitor = typeof window !== 'undefined' && (
+            window.location.protocol === 'file:' ||
+            window.location.protocol === 'capacitor:' ||
+            !!(window as any).Capacitor?.isNativePlatform?.()
+          );
           
           const savedOverride = localStorage.getItem('swiftcart_api_base_override');
-          if (savedOverride) {
-            base = savedOverride;
-          } else if (isCapacitor) {
-            base = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+          if (isCapacitor) {
+            base = savedOverride || '';
           } else {
+            // Browser environment - always relative or window.location.origin, no remote hardcoded fallbacks
             base = window.location.origin;
           }
+          console.log('API BASE', base);
+          console.log('IS CAPACITOR', isCapacitor);
         }
         
         const versionJsonUrl = `${base.replace(/\/+$/, '')}/version.json`;
