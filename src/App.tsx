@@ -383,7 +383,10 @@ export default function App() {
         }
         
         const versionJsonUrl = `${base.replace(/\/+$/, '')}/version.json`;
+        console.log('[AutoUpdater] CURRENT_VERSION:', CURRENT_VERSION);
+        console.log('[AutoUpdater] TARGET_URL_FETCH:', versionJsonUrl);
         console.log('[AutoUpdater] Checking version from:', versionJsonUrl);
+        
         const res = await fetch(versionJsonUrl);
         if (!res.ok) {
           throw new Error(`Failed to fetch version.json, status: ${res.status}`);
@@ -391,6 +394,9 @@ export default function App() {
         const data = await res.json();
         const latestVersion = data.latestVersion;
         const apkUrl = data.apkUrl;
+        
+        console.log('[AutoUpdater] FETCHED latestVersion:', latestVersion);
+        console.log('[AutoUpdater] FETCHED apkUrl:', apkUrl);
         
         if (latestVersion && apkUrl) {
           // Compare semver
@@ -410,6 +416,8 @@ export default function App() {
             }
           }
           
+          console.log('[AutoUpdater] COMPARISON_RESULT (isNewer):', isNewer);
+          
           if (isNewer) {
             console.log(`[AutoUpdater] New update found: server has ${latestVersion}, client has ${CURRENT_VERSION}`);
             setUpdateInfo({
@@ -417,9 +425,13 @@ export default function App() {
               latestVersion,
               apkUrl
             });
+            console.log('[AutoUpdater] UPDATE_MODAL_SHOWN (shouldShow): true');
           } else {
             console.log('[AutoUpdater] App is up to date.');
+            console.log('[AutoUpdater] UPDATE_MODAL_SHOWN (shouldShow): false');
           }
+        } else {
+          console.log('[AutoUpdater] Missing latestVersion or apkUrl in server response.');
         }
       } catch (err) {
         console.warn('[AutoUpdater] Failed to complete update checks:', err);

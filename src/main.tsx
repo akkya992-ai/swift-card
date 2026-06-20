@@ -73,7 +73,8 @@ if (typeof window !== 'undefined') {
   if (remoteApiBase) {
     addDiagEntry('info', '🛰️ STAGE 4: Attaching interceptor middleware to window.fetch to reroute relative paths.');
     const originalFetch = window.fetch;
-    window.fetch = function (input, init) {
+    
+    const customFetch = function (input: any, init?: any): Promise<Response> {
       let urlStr = '';
       if (typeof input === 'string') {
         urlStr = input;
@@ -87,7 +88,7 @@ if (typeof window !== 'undefined') {
                             urlStr.startsWith(window.location.origin + '/api');
 
       let resolvedUrl = urlStr;
-      let requestPromise;
+      let requestPromise: Promise<Response>;
 
       if (isRelativeApi) {
         const apiPath = urlStr.startsWith('/api') 
@@ -149,7 +150,42 @@ if (typeof window !== 'undefined') {
         throw err;
       });
     };
-    addDiagEntry('info', '🛡️ STAGE 5: Global fetch redirect interceptor registered successfully.');
+
+    let canOverrideFetch = false;
+    try {
+      const desc = Object.getOwnPropertyDescriptor(window, 'fetch') || Object.getOwnPropertyDescriptor(Window.prototype, 'fetch');
+      if (desc) {
+        if (desc.configurable || desc.writable) {
+          canOverrideFetch = true;
+        }
+      } else {
+        canOverrideFetch = true;
+      }
+    } catch (e) {
+      canOverrideFetch = false;
+    }
+
+    if (canOverrideFetch) {
+      try {
+        Object.defineProperty(window, 'fetch', {
+          value: customFetch,
+          writable: true,
+          configurable: true,
+          enumerable: true
+        });
+        addDiagEntry('info', '🛡️ STAGE 5: Global fetch redirect interceptor registered successfully using Object.defineProperty.');
+      } catch (e: any) {
+        addDiagEntry('warn', '⚠️ Object.defineProperty for window.fetch failed, attempting direct assignment fallback', { error: e.message || String(e) });
+        try {
+          (window as any).fetch = customFetch;
+          addDiagEntry('info', '🛡️ STAGE 5: Global fetch redirect interceptor registered successfully using direct assignment.');
+        } catch (err2: any) {
+          addDiagEntry('error', '💥 All techniques to hook window.fetch failed on this device environment.', { error: err2.message || String(err2) });
+        }
+      }
+    } else {
+      addDiagEntry('warn', '⚠️ window.fetch is detected as non-configurable and non-writable (getter-only). Skipping global redirect registration to prevent crashes.');
+    }
   }
 }
 
