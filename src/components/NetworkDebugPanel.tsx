@@ -29,9 +29,20 @@ export default function NetworkDebugPanel() {
       setIsCapacitor(getIsCapacitor());
     }, 1500);
 
+    if (typeof window !== 'undefined') {
+      const win = window as any;
+      win.__triggerApiConfigRefresh = (newBase: string) => {
+        setApiBase(newBase);
+      };
+    }
+
     return () => {
       unsubscribe();
       clearInterval(timer);
+      if (typeof window !== 'undefined') {
+        const win = window as any;
+        delete win.__triggerApiConfigRefresh;
+      }
     };
   }, []);
 
@@ -166,6 +177,39 @@ export default function NetworkDebugPanel() {
                   className="px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition duration-200 active:scale-95 cursor-pointer flex items-center justify-center"
                 >
                   Apply
+                </button>
+              </div>
+
+              {/* Quick Preset Toggles for Cloud Environments */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Presets:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.setItem('swiftcart_api_base_override', 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
+                    setIpInput('https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
+                    setCustomOverride('https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
+                    setApiBase(getApiBase());
+                    setShowNotification(true);
+                    setTimeout(() => setShowNotification(false), 2000);
+                  }}
+                  className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-[9px] text-indigo-400 font-bold rounded-lg font-mono transition active:scale-95 cursor-pointer"
+                >
+                  SANDBOX (DEV)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.setItem('swiftcart_api_base_override', 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
+                    setIpInput('https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
+                    setCustomOverride('https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
+                    setApiBase(getApiBase());
+                    setShowNotification(true);
+                    setTimeout(() => setShowNotification(false), 2000);
+                  }}
+                  className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-[9px] text-emerald-400 font-bold rounded-lg font-mono transition active:scale-95 cursor-pointer"
+                >
+                  RELEASE (PRE)
                 </button>
               </div>
 

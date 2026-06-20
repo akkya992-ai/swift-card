@@ -39,10 +39,59 @@ export const getIsCapacitor = (): boolean => {
   // 3. User Agent markers
   const userAgent = navigator.userAgent ? navigator.userAgent.toLowerCase() : '';
   const isCapacitorUA = userAgent.includes('capacitor');
+
+  // 4. Capacitor WebView standard address mapping:
+  // Android/iOS Capacitor local servers are hosted on localhost but with empty port (e.g. http://localhost)
+  // Standard computer Web browser localhost has a port (e.g. :5173 or :3000)
+  const isCapacitorAndroidOrigin = window.location.hostname === 'localhost' && window.location.port === '';
   
   // Combine rules securely: if verified native platform flag is true,
-  // or Capacitor object is present AND running on a native scheme or Capacitor UA
-  return !!(isNativePlatform || (hasCapObject && (isNativeProtocol || isCapacitorUA)));
+  // or Capacitor object is present AND running on a native scheme or Capacitor UA, or mobile WebView native mapping matches
+  return !!(isNativePlatform || hasCapObject || isNativeProtocol || isCapacitorUA || isCapacitorAndroidOrigin);
+};
+
+export const CANDIDATE_BACKENDS = [
+  'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app',
+  'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app'
+];
+
+export const startBackendAutoDiscovery = () => {
+  if (typeof window === 'undefined') return;
+
+  const win = window as any;
+  if (win.__BACKEND_AUTO_DISCOVERY_STARTED__) return;
+  win.__BACKEND_AUTO_DISCOVERY_STARTED__ = true;
+
+  // Skip dynamic probing if the user set a manual absolute IP/host override to preserve intentional developer configurations
+  const overrideUrl = localStorage.getItem('swiftcart_api_base_override');
+  if (overrideUrl && overrideUrl.trim() !== '') {
+    addDiagEntry('info', 'ℹ️ [AUTO DISCOVERY] Manual override is active. Skipping background backend health probing.');
+    return;
+  }
+
+  addDiagEntry('info', '🛰️ [AUTO DISCOVERY] Launching background health-checks on candidate backend servers...', { CANDIDATE_BACKENDS });
+
+  // Probe candidates concurrently
+  CANDIDATE_BACKENDS.forEach((base) => {
+    const healthUrl = `${base}/api/health`;
+    const callerFetch = win.__originalFetchBackup || window.fetch;
+
+    callerFetch(healthUrl, { method: 'GET', mode: 'cors', cache: 'no-cache' })
+      .then((res: Response) => {
+        if (res.ok) {
+          addDiagEntry('info', `📡 [AUTO DISCOVERY OK] Backend responded at ${base}. Setting as active discovered endpoint.`);
+          localStorage.setItem('swiftcart_auto_discovered_backend', base);
+          
+          // Re-update the config in real-time
+          if (typeof win.__triggerApiConfigRefresh === 'function') {
+            win.__triggerApiConfigRefresh(base);
+          }
+        }
+      })
+      .catch(() => {
+        // Silent catch for candidate being offline
+      });
+  });
 };
 
 /**
@@ -50,6 +99,7 @@ export const getIsCapacitor = (): boolean => {
  * Priority order:
  * - import.meta.env.VITE_API_BASE_URL (highest priority)
  * - localStorage override key: swiftcart_api_base_override
+ * - Dynamic auto-discovered working backend URL
  * - fallback to Cloud Run backend URL: https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app
  *
  * 3. Remove any logic that forces window.location.origin as API base unless backend is confirmed same-origin.
@@ -73,15 +123,26 @@ export const getApiBase = (): string => {
     }
   }
 
-  // 3. Optional fallback: Same-origin window.location.origin ONLY if explicitly confirmed as a direct development same-origin host
+  // 3. Third priority: Auto-discovered working backend url
+  if (typeof window !== 'undefined') {
+    const discoveredUrl = localStorage.getItem('swiftcart_auto_discovered_backend');
+    if (discoveredUrl && discoveredUrl.trim() !== '') {
+      const cleanUrl = discoveredUrl.replace(/\/+$/, '');
+      logConfigState(cleanUrl, 'Auto-Discovered Backend (swiftcart_auto_discovered_backend)');
+      return cleanUrl;
+    }
+  }
+
+  // 4. Optional fallback: Same-origin window.location.origin ONLY if explicitly confirmed as a direct development same-origin host
   if (typeof window !== 'undefined' && !getIsCapacitor()) {
     const hostname = window.location.hostname;
+    // Standard local development PC hostnames (must have port specified)
     const isSameOriginHost = 
       hostname.includes('ais-dev-') || 
       hostname.includes('ais-pre-') || 
-      hostname === 'localhost' || 
-      hostname === '127.0.0.1' || 
-      hostname === '0.0.0.0';
+      (hostname === 'localhost' && window.location.port !== '') || 
+      (hostname === '127.0.0.1' && window.location.port !== '') || 
+      (hostname === '0.0.0.0' && window.location.port !== '');
       
     if (isSameOriginHost) {
       const cleanUrl = window.location.origin.replace(/\/+$/, '');
@@ -90,7 +151,7 @@ export const getApiBase = (): string => {
     }
   }
 
-  // 4. Fallback to Cloud Run backend URL
+  // 5. Fallback to Cloud Run backend URL
   const fallbackUrl = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
   logConfigState(fallbackUrl, 'Default Fallback (Cloud Run backend)');
   return fallbackUrl;
@@ -216,6 +277,8 @@ export const applyGlobalNetworkingInterceptors = () => {
 
   // 1. Intercept window.fetch
   const originalFetch = window.fetch;
+  win.__originalFetchBackup = originalFetch; // Store a safe, direct backup for discovery operations
+
   const customFetch = function (input: any, init?: any): Promise<Response> {
     let originalUrl = '';
     if (typeof input === 'string') {
@@ -322,4 +385,7 @@ export const applyGlobalNetworkingInterceptors = () => {
     return originalOpen.apply(this, [method, resolvedUrl, ...args] as any);
   };
   addDiagEntry('info', '🛡️ Registered custom global window.XMLHttpRequest interceptor successfully.');
+
+  // Kickstart asynchronous background candidate server discovery
+  startBackendAutoDiscovery();
 };
