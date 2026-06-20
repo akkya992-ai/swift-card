@@ -62,6 +62,14 @@ if (typeof window !== 'undefined') {
   // Sourced from local storage config or defaulting to the current Cloud Run sandbox URI
   let remoteApiBase = localStorage.getItem('swiftcart_api_base_override') || '';
   
+  // Safe auto-cleaning of sandbox developer URL overrides when accessed from a normal web browser.
+  // This prevents production deployments from sending backend API calls to the private sandbox container.
+  if (!isCapacitor && remoteApiBase && remoteApiBase.includes('ais-dev-')) {
+    localStorage.removeItem('swiftcart_api_base_override');
+    remoteApiBase = '';
+    addDiagEntry('info', '🧹 STAGE 3: Automatically cleared stale sandboxed dev API server override from localStorage.');
+  }
+  
   if (!remoteApiBase && isCapacitor) {
     // Dynamic fallback to standard development service container url
     remoteApiBase = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';

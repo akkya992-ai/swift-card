@@ -515,7 +515,13 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
         
         onLoginSuccess(verifyData.profile.phone, selectedRole, verifyData.profile);
       } catch (err: any) {
-        const baseOverride = localStorage.getItem('swiftcart_api_base_override') || 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+        const isCapacitor = typeof window !== 'undefined' && !!((window as any).Capacitor || 
+                            window.location.hostname === 'localhost' || 
+                            window.location.hostname === '127.0.0.1' || 
+                            window.location.protocol === 'file:' ||
+                            window.location.protocol === 'capacitor:');
+        const defaultFallback = isCapacitor ? 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app' : (typeof window !== 'undefined' ? window.location.origin : '');
+        const baseOverride = localStorage.getItem('swiftcart_api_base_override') || defaultFallback;
         setError(err.message === 'Failed to fetch' || err.message?.includes('network') || err.message?.includes('timeout')
           ? `Connection failed. Could not reach server at ${baseOverride}. Please verify your internet connection or tap the Settings gear in the top-right to override the API server IP.\nError: ${err.message}`
           : err.message || 'Simulated verification failed.'
@@ -1458,7 +1464,13 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
                     const btn = e.currentTarget;
                     btn.disabled = true;
                     btn.innerText = "Pinging...";
-                    const base = localStorage.getItem('swiftcart_api_base_override') || 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+                    const isCapacitor = typeof window !== 'undefined' && !!((window as any).Capacitor || 
+                                        window.location.hostname === 'localhost' || 
+                                        window.location.hostname === '127.0.0.1' || 
+                                        window.location.protocol === 'file:' ||
+                                        window.location.protocol === 'capacitor:');
+                    const defaultFallback = isCapacitor ? 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app' : (typeof window !== 'undefined' ? window.location.origin : '');
+                    const base = localStorage.getItem('swiftcart_api_base_override') || defaultFallback;
                     try {
                       const res = await fetch(`${base.replace(/\/+$/, '')}/api/health`, { method: 'GET' });
                       if (res.ok) {
