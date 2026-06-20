@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { LogOut, ShieldAlert, Sparkles, User, RefreshCw, Layout, Bike, Store, ShoppingBag, Bell, Volume2, X } from 'lucide-react';
+import { Browser } from '@capacitor/browser';
 import { UserRole } from './types';
 import AuthPage from './components/AuthPage';
 import CustomerApp from './components/CustomerApp';
@@ -32,6 +33,8 @@ export default function App() {
   }
 
   // Authentication & session state
+  const CURRENT_VERSION = '1.0.0';
+  const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion: string; apkUrl: string } | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedRole, setSelectedRole] = useState<UserRole>('customer');
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -356,6 +359,89 @@ export default function App() {
       clearTimeout(timer);
     };
   }, []);
+
+  // APK update checker
+  useEffect(() => {
+    const checkAppVersion = async () => {
+      try {
+        let base = '';
+        if (typeof window !== 'undefined') {
+          const isCapacitor = !!((window as any).Capacitor || 
+                              window.location.hostname === 'localhost' || 
+                              window.location.hostname === '127.0.0.1' || 
+                              window.location.protocol === 'file:' ||
+                              window.location.protocol === 'capacitor:');
+          
+          const savedOverride = localStorage.getItem('swiftcart_api_base_override');
+          if (savedOverride) {
+            base = savedOverride;
+          } else if (isCapacitor) {
+            base = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+          } else {
+            base = window.location.origin;
+          }
+        }
+        
+        const versionJsonUrl = `${base.replace(/\/+$/, '')}/version.json`;
+        console.log('[AutoUpdater] Checking version from:', versionJsonUrl);
+        const res = await fetch(versionJsonUrl);
+        if (!res.ok) {
+          throw new Error(`Failed to fetch version.json, status: ${res.status}`);
+        }
+        const data = await res.json();
+        const latestVersion = data.latestVersion;
+        const apkUrl = data.apkUrl;
+        
+        if (latestVersion && apkUrl) {
+          // Compare semver
+          const parse = (v: string) => v.split('.').map(n => parseInt(n, 10) || 0);
+          const curParts = parse(CURRENT_VERSION);
+          const latParts = parse(latestVersion);
+          let isNewer = false;
+          for (let i = 0; i < Math.max(curParts.length, latParts.length); i++) {
+            const curVal = curParts[i] || 0;
+            const latVal = latParts[i] || 0;
+            if (latVal > curVal) {
+              isNewer = true;
+              break;
+            }
+            if (latVal < curVal) {
+              break;
+            }
+          }
+          
+          if (isNewer) {
+            console.log(`[AutoUpdater] New update found: server has ${latestVersion}, client has ${CURRENT_VERSION}`);
+            setUpdateInfo({
+              hasUpdate: true,
+              latestVersion,
+              apkUrl
+            });
+          } else {
+            console.log('[AutoUpdater] App is up to date.');
+          }
+        }
+      } catch (err) {
+        console.warn('[AutoUpdater] Failed to complete update checks:', err);
+      }
+    };
+
+    checkAppVersion();
+  }, []);
+
+  const handleOpenUpdateUrl = async (url: string) => {
+    try {
+      const isCapacitor = typeof window !== 'undefined' && !!(window as any).Capacitor;
+      if (isCapacitor) {
+        await Browser.open({ url });
+      } else {
+        window.open(url, '_blank');
+      }
+    } catch (err) {
+      console.error('[AutoUpdater] Capacitor Browser.open error, fallback to window.open', err);
+      window.open(url, '_blank');
+    }
+  };
 
   // Monitor loading durations (Task 5)
   const [loadingTimeExceeded, setLoadingTimeExceeded] = useState(false);
@@ -1154,6 +1240,51 @@ export default function App() {
                 className="w-full py-2.5 bg-slate-850 hover:bg-slate-700 text-slate-400 font-bold rounded-xl text-[10px] uppercase transition cursor-pointer text-center"
               >
                 Decline & Mute Loop
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* APK Update Alert modal popup */}
+      {updateInfo && updateInfo.hasUpdate && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-[999999] animate-fade-in">
+          <div className="bg-white border border-slate-100 max-w-sm w-full rounded-[32px] p-6 shadow-2xl relative space-y-5 text-left">
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto text-3xl shadow-sm border border-emerald-100 animate-bounce">
+                🚀
+              </div>
+              <h3 className="text-lg font-black text-slate-900 leading-tight">Update Available</h3>
+              <p className="text-xs text-slate-500 leading-normal font-sans px-2 text-center">
+                A newer version of DailyMart is available. Update now to experience new performance enhancements, secure encryption, and smooth live orders!
+              </p>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 text-xs space-y-2 font-sans">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400 font-semibold text-[10px] uppercase tracking-wider">Installed Version</span>
+                <span className="font-mono text-slate-600 font-bold bg-slate-200/50 px-2.5 py-0.5 rounded-full text-[11px]">{CURRENT_VERSION}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400 font-semibold text-[10px] uppercase tracking-wider">Latest Version</span>
+                <span className="font-mono text-emerald-700 font-black bg-emerald-55 px-2.5 py-0.5 rounded-full text-[11px]">{updateInfo.latestVersion}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setUpdateInfo(null)}
+                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold text-[11px] rounded-xl uppercase transition cursor-pointer text-center"
+              >
+                Later
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenUpdateUrl(updateInfo.apkUrl)}
+                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs uppercase shadow-md flex items-center justify-center cursor-pointer transition active:scale-95 text-center"
+              >
+                Update Now
               </button>
             </div>
           </div>
