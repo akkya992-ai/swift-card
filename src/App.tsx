@@ -9,6 +9,8 @@ import SellerDashboard from './components/SellerDashboard';
 import RiderDashboard from './components/RiderDashboard';
 import LegalPages from './components/LegalPages';
 import RoleSelector from './components/RoleSelector';
+import { getIsCapacitor, getApiBase } from './apiConfig';
+import NetworkDebugPanel from './components/NetworkDebugPanel';
 // @ts-ignore
 import dailyMartLogo from './assets/images/daily_mart_green_logo_1781598237470.jpg';
 
@@ -326,30 +328,14 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Clean up stale sandbox/dev API base URLs from localStorage on custom production domains
     if (typeof window !== 'undefined') {
-      const isCapacitor = typeof window !== 'undefined' && (
-        window.location.protocol === 'file:' ||
-        window.location.protocol === 'capacitor:' ||
-        !!(window as any).Capacitor?.isNativePlatform?.()
-      );
-      const apiBase = isCapacitor ? (localStorage.getItem('swiftcart_api_base_override') || '') : window.location.origin;
-      console.log('API BASE', apiBase);
-      console.log('IS CAPACITOR', isCapacitor);
-      const isPrereleaseOrDevWorkspace = 
-        window.location.hostname.includes('ais-dev-') || 
-        window.location.hostname.includes('ais-pre-') || 
-        window.location.hostname.includes('ai.studio') ||
-        window.location.hostname.includes('makersuite');
+      const isCapacitor = getIsCapacitor();
+      const apiBase = getApiBase();
+      console.log('App Boot - API BASE:', apiBase);
+      console.log('App Boot - IS CAPACITOR:', isCapacitor);
       
-      if (!isCapacitor && !isPrereleaseOrDevWorkspace) {
-        const savedOverride = localStorage.getItem('swiftcart_api_base_override');
-        if (savedOverride && (savedOverride.includes('ais-dev-') || savedOverride.includes('ais-pre-'))) {
-          localStorage.removeItem('swiftcart_api_base_override');
-          const win = window as any;
-          win.__addDiagnosticLog?.('info', `🧹 [STORAGE CLEANUP] Force-cleared stale sandboxed API base override: ${savedOverride}`);
-        }
-      }
+      const win = window as any;
+      win.__addDiagnosticLog?.('info', `🎯 App booted with platform: ${isCapacitor ? 'native' : 'web'} and apiBase: ${apiBase}`);
     }
 
     if (typeof window !== 'undefined') {
@@ -1329,6 +1315,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Network and APK API debugging capabilities */}
+      <NetworkDebugPanel />
 
     </div>
   );

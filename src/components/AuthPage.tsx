@@ -30,6 +30,7 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword 
 } from '../firebase';
+import { getIsCapacitor, getApiBase } from '../apiConfig';
 // @ts-ignore
 import dailyMartLogo from '../assets/images/daily_mart_green_logo_1781598237470.jpg';
 
@@ -176,7 +177,8 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
     name: string | null;
     role: UserRole;
   }) => {
-    const res = await fetch('/api/auth/firebase-sync', {
+    const apiBase = getApiBase();
+    const res = await fetch(`${apiBase}/api/auth/firebase-sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -344,7 +346,8 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
     if (!firebaseActive) {
       // High fidelity standard local mock auth
       try {
-        const endpoint = isRegistering ? '/api/auth/signup' : '/api/auth/login-email';
+        const apiBase = getApiBase();
+        const endpoint = isRegistering ? `${apiBase}/api/auth/signup` : `${apiBase}/api/auth/login-email`;
         const bodyObj = {
           email,
           password,
@@ -415,7 +418,8 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
         setFirebaseActive(false);
         // Instantly execute mock sandbox signup/login flow
         try {
-          const endpoint = isRegistering ? '/api/auth/signup' : '/api/auth/login-email';
+          const apiBase = getApiBase();
+          const endpoint = isRegistering ? `${apiBase}/api/auth/signup` : `${apiBase}/api/auth/login-email`;
           const bodyObj = {
             email,
             password,
@@ -479,16 +483,12 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
     if (!firebaseActive || !enableRealOtp) {
       // Mock Sandbox flow - verify internally without showing any codes or prompts to user
       try {
-        const isCapacitor = typeof window !== 'undefined' && (
-          window.location.protocol === 'file:' ||
-          window.location.protocol === 'capacitor:' ||
-          !!(window as any).Capacitor?.isNativePlatform?.()
-        );
-        const apiBase = isCapacitor ? (localStorage.getItem('swiftcart_api_base_override') || '') : window.location.origin;
+        const isCapacitor = getIsCapacitor();
+        const apiBase = getApiBase();
         console.log('API BASE', apiBase);
         console.log('IS CAPACITOR', isCapacitor);
 
-        const res = await fetch('/api/auth/send-otp', {
+        const res = await fetch(`${apiBase}/api/auth/send-otp`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone: cleaned, role: selectedRole })
@@ -499,7 +499,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
           throw new Error(data.error || 'Failed to dispatch sandbox OTP.');
         }
 
-        const verifyRes = await fetch('/api/auth/verify-otp', {
+        const verifyRes = await fetch(`${apiBase}/api/auth/verify-otp`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -524,35 +524,13 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
         
         onLoginSuccess(verifyData.profile.phone, selectedRole, verifyData.profile);
       } catch (err: any) {
-        const isPrereleaseOrDevWorkspace = typeof window !== 'undefined' && 
-          (window.location.hostname.includes('ais-dev-') || 
-           window.location.hostname.includes('ais-pre-') || 
-           window.location.hostname.includes('ai.studio') ||
-           window.location.hostname.includes('makersuite'));
-        const isCapacitor = typeof window !== 'undefined' && (
-                            window.location.protocol === 'file:' ||
-                            window.location.protocol === 'capacitor:' ||
-                            !!(window as any).Capacitor?.isNativePlatform?.()
-        );
-        
-        let baseOverride = localStorage.getItem('swiftcart_api_base_override') || '';
-        
-        if (!isCapacitor && !isPrereleaseOrDevWorkspace) {
-          // Force bypass developer sandbox domain values in real production web browsers
-          if (baseOverride && (baseOverride.includes('ais-dev-') || baseOverride.includes('ais-pre-'))) {
-            localStorage.removeItem('swiftcart_api_base_override');
-            baseOverride = '';
-          }
-        }
-        
-        const defaultFallback = isCapacitor ? '' : (typeof window !== 'undefined' ? window.location.origin : '');
-        const finalBase = baseOverride || defaultFallback;
-        const apiBase = finalBase;
+        const isCapacitor = getIsCapacitor();
+        const apiBase = getApiBase();
         console.log('API BASE', apiBase);
         console.log('IS CAPACITOR', isCapacitor);
 
         setError(err.message === 'Failed to fetch' || err.message?.includes('network') || err.message?.includes('timeout')
-          ? `Connection failed. Could not reach server at ${finalBase}. Please verify your internet connection or tap the Settings gear in the top-right to override the API server IP.\nError: ${err.message}`
+          ? `Connection failed. Could not reach server at ${apiBase}. Please verify your internet connection or tap the Settings gear in the top-right to override the API server IP.\nError: ${err.message}`
           : err.message || 'Simulated verification failed.'
         );
       } finally {
@@ -597,7 +575,8 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
         setFirebaseActive(false);
         // Transition instantly to Sandbox mock send OTP
         try {
-          const res = await fetch('/api/auth/send-otp', {
+          const apiBase = getApiBase();
+          const res = await fetch(`${apiBase}/api/auth/send-otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ phone: cleaned, role: selectedRole })
@@ -635,7 +614,8 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
     if (!firebaseActive || !enableRealOtp) {
       // Verify mock code from back-end
       try {
-        const res = await fetch('/api/auth/verify-otp', {
+        const apiBase = getApiBase();
+        const res = await fetch(`${apiBase}/api/auth/verify-otp`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1493,40 +1473,19 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
                     const btn = e.currentTarget;
                     btn.disabled = true;
                     btn.innerText = "Pinging...";
-                    const isPrereleaseOrDevWorkspace = typeof window !== 'undefined' && 
-                                        (window.location.hostname.includes('ais-dev-') || 
-                                         window.location.hostname.includes('ais-pre-') || 
-                                         window.location.hostname.includes('ai.studio') ||
-                                         window.location.hostname.includes('makersuite'));
-                    const isCapacitor = typeof window !== 'undefined' && (
-                                        window.location.protocol === 'file:' ||
-                                        window.location.protocol === 'capacitor:' ||
-                                        !!(window as any).Capacitor?.isNativePlatform?.()
-                                        );
-                    
-                    let base = localStorage.getItem('swiftcart_api_base_override') || '';
-                    if (!isCapacitor && !isPrereleaseOrDevWorkspace) {
-                      // Prevent sandbox API base leaks on production URLs
-                      if (base && (base.includes('ais-dev-') || base.includes('ais-pre-'))) {
-                        localStorage.removeItem('swiftcart_api_base_override');
-                        base = '';
-                      }
-                    }
-                    
-                    const defaultFallback = isCapacitor ? '' : (typeof window !== 'undefined' ? window.location.origin : '');
-                    const finalPingBase = base || defaultFallback;
-                    const apiBase = finalPingBase;
-                    console.log('API BASE', apiBase);
-                    console.log('IS CAPACITOR', isCapacitor);
+                    const isCapacitor = getIsCapacitor();
+                    const apiBase = getApiBase();
+                    console.log('PING - API BASE', apiBase);
+                    console.log('PING - IS CAPACITOR', isCapacitor);
                     try {
-                      const res = await fetch(`${finalPingBase.replace(/\/+$/, '')}/api/health`, { method: 'GET' });
+                      const res = await fetch(`${apiBase}/api/health`, { method: 'GET' });
                       if (res.ok) {
                         alert(`🟢 CONNECTED! Server responded successfully with HTTP ${res.status}`);
                       } else {
                         alert(`🔴 FAILED! Server returned status ${res.status}`);
                       }
-                    } catch (err: any) {
-                      alert(`🔴 UNREACHABLE! Could not connect to: ${base}\nError: ${err.message || String(err)}`);
+                                        } catch (err: any) {
+                      alert(`🔴 UNREACHABLE! Could not connect to: ${apiBase}\nError: ${err.message || String(err)}`);
                     } finally {
                       btn.disabled = false;
                       btn.innerText = "Ping Server";

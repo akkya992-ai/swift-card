@@ -4,6 +4,7 @@ import App from './App.tsx';
 import './index.css';
 import 'leaflet/dist/leaflet.css';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { getIsCapacitor, getApiBase, applyGlobalNetworkingInterceptors } from './apiConfig';
 
 console.log("MAIN_TSX_LOADED");
 
@@ -27,11 +28,7 @@ addDiagEntry('info', '🏁 STAGE 1: src/main.tsx loaded by browser engine.');
 // Global Fetch Interceptor to support native Capacitor builds on physical Android devices
 if (typeof window !== 'undefined') {
   addDiagEntry('info', '⚙️ STAGE 2: Evaluating execution environment features.');
-  const isCapacitor = typeof window !== 'undefined' && (
-    window.location.protocol === 'file:' ||
-    window.location.protocol === 'capacitor:' ||
-    !!(window as any).Capacitor?.isNativePlatform?.()
-  );
+  const isCapacitor = getIsCapacitor();
   
   // High-fidelity User Agent & System inspection for APK behavior analysis
   const userAgentStr = navigator.userAgent || '';
@@ -59,165 +56,7 @@ if (typeof window !== 'undefined') {
     capacitorPluginsAvailableDaily: capacitorPlugins
   });
 
-  // Sourced from local storage config or defaulting to the current Cloud Run sandbox URI
-  let remoteApiBase = '';
-  if (isCapacitor) {
-    remoteApiBase = localStorage.getItem('swiftcart_api_base_override') || '';
-  } else {
-    remoteApiBase = '';
-  }
-
-  const apiBase = isCapacitor ? remoteApiBase : window.location.origin;
-  console.log('API BASE', apiBase);
-  console.log('IS CAPACITOR', isCapacitor);
-
-  const isPrereleaseOrDevWorkspace = typeof window !== 'undefined' && 
-    (window.location.hostname.includes('ais-dev-') || 
-     window.location.hostname.includes('ais-pre-') || 
-     window.location.hostname.includes('ai.studio') ||
-     window.location.hostname.includes('makersuite'));
-
-  // Safe auto-cleaning of sandbox developer URL overrides when accessed from a normal web browser.
-  // This prevents production deployments from sending backend API calls to the private sandbox container.
-  if (!isCapacitor && !isPrereleaseOrDevWorkspace && remoteApiBase && (remoteApiBase.includes('ais-dev-') || remoteApiBase.includes('ais-pre-'))) {
-    localStorage.removeItem('swiftcart_api_base_override');
-    remoteApiBase = '';
-    addDiagEntry('info', '🧹 STAGE 3: Automatically cleared stale sandboxed dev API server override from localStorage.');
-  }
-  
-  if (isCapacitor) {
-    addDiagEntry('info', '🔌 STAGE 3: Checked API base configuration.', { remoteApiBase: remoteApiBase || 'Direct backend (standard dev/prod ports)' });
-  } else {
-    addDiagEntry('info', '🔌 STAGE 3: Checked API base configuration. Using relative/origin browser URLs.', { apiBase });
-  }
-
-  // Global Fetch Interceptor to support native environments and log all intercepted calls
-  if (typeof window !== 'undefined') {
-    addDiagEntry('info', '🛰️ STAGE 4: Attaching interceptor middleware to window.fetch to route and monitor API activity.');
-    const originalFetch = window.fetch;
-    
-    const customFetch = function (input: any, init?: any): Promise<Response> {
-      let urlStr = '';
-      if (typeof input === 'string') {
-        urlStr = input;
-      } else if (input && typeof input === 'object' && 'url' in input) {
-        urlStr = (input as any).url;
-      }
-
-      // Check if it's a relative/absolute API endpoint to sandbox
-      const isRelativeApi = urlStr.startsWith('/api') || 
-                            urlStr.startsWith('api/') ||
-                            urlStr.startsWith(window.location.origin + '/api');
-
-      let resolvedUrl = urlStr;
-      let requestPromise: Promise<Response>;
-
-      if (isRelativeApi) {
-        const apiPath = urlStr.startsWith('/api') 
-          ? urlStr 
-          : urlStr.startsWith('api/') 
-            ? '/' + urlStr 
-            : urlStr.substring(window.location.origin.length);
-
-        const currentApiBase = isCapacitor ? remoteApiBase : window.location.origin;
-        const sanitizedBase = currentApiBase.replace(/\/+$/, '');
-        resolvedUrl = `${sanitizedBase}${apiPath}`;
-        
-        const requestUrl = resolvedUrl;
-        console.log({
-          origin: window.location.origin,
-          isCapacitor,
-          apiBase: isCapacitor ? remoteApiBase : window.location.origin,
-          requestUrl
-        });
-        
-        addDiagEntry('info', `⚡ [INTERCEPT RE-ROUTE] ${urlStr} -> ${resolvedUrl}`);
-        
-        if (typeof input === 'string') {
-          requestPromise = originalFetch(resolvedUrl, init);
-        } else {
-          try {
-            const newReq = new Request(resolvedUrl, input as any);
-            requestPromise = originalFetch(newReq, init);
-          } catch (e: any) {
-            addDiagEntry('warn', '⚠️ Request object cloning failed, using direct string URL fallback', { error: e.message || String(e) });
-            requestPromise = originalFetch(resolvedUrl, init);
-          }
-        }
-      } else {
-        requestPromise = originalFetch(input, init);
-      }
-
-      const cleanPath = resolvedUrl.split('?')[0];
-
-      return requestPromise.then((response) => {
-        // Clone response to safely read text and log details
-        const responseCopy = response.clone();
-        responseCopy.text().then((bodyText) => {
-          if (response.ok) {
-            addDiagEntry('info', `📡 [API SUCCESS] HTTP ${response.status}: ${cleanPath}`, {
-              status: response.status,
-              statusText: response.statusText,
-              bodyLength: bodyText.length,
-              preview: bodyText.substring(0, 150)
-            });
-          } else {
-            addDiagEntry('error', `📡 [API ERROR STATUS] HTTP ${response.status}: ${cleanPath}`, {
-              status: response.status,
-              statusText: response.statusText,
-              preview: bodyText.substring(0, 400)
-            });
-          }
-        }).catch(() => {
-          addDiagEntry('info', `📡 [API RESPONSE ONLY] HTTP ${response.status}: ${cleanPath} (Unreadable payload binary)`);
-        });
-        return response;
-      }).catch((err: any) => {
-        addDiagEntry('error', `💥 [API SEVERE FAILURE] Fetch to "${cleanPath}" failed entirely (Network unreachable / CORS blocked / connection refused)`, {
-          message: err?.message || String(err),
-          name: err?.name,
-          stack: err?.stack
-        });
-        throw err;
-      });
-    };
-
-    let canOverrideFetch = false;
-    try {
-      const desc = Object.getOwnPropertyDescriptor(window, 'fetch') || Object.getOwnPropertyDescriptor(Window.prototype, 'fetch');
-      if (desc) {
-        if (desc.configurable || desc.writable) {
-          canOverrideFetch = true;
-        }
-      } else {
-        canOverrideFetch = true;
-      }
-    } catch (e) {
-      canOverrideFetch = false;
-    }
-
-    if (canOverrideFetch) {
-      try {
-        Object.defineProperty(window, 'fetch', {
-          value: customFetch,
-          writable: true,
-          configurable: true,
-          enumerable: true
-        });
-        addDiagEntry('info', '🛡️ STAGE 5: Global fetch redirect interceptor registered successfully using Object.defineProperty.');
-      } catch (e: any) {
-        addDiagEntry('warn', '⚠️ Object.defineProperty for window.fetch failed, attempting direct assignment fallback', { error: e.message || String(e) });
-        try {
-          (window as any).fetch = customFetch;
-          addDiagEntry('info', '🛡️ STAGE 5: Global fetch redirect interceptor registered successfully using direct assignment.');
-        } catch (err2: any) {
-          addDiagEntry('error', '💥 All techniques to hook window.fetch failed on this device environment.', { error: err2.message || String(err2) });
-        }
-      }
-    } else {
-      addDiagEntry('warn', '⚠️ window.fetch is detected as non-configurable and non-writable (getter-only). Skipping global redirect registration to prevent crashes.');
-    }
-  }
+  applyGlobalNetworkingInterceptors();
 }
 
 // Register the PWA background alarm service worker and request notification permissions
