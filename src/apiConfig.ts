@@ -203,23 +203,33 @@ export const safeUrlJoin = (base: string, path: string): string => {
 export const resolveApiUrl = (url: string): string => {
   if (typeof url !== 'string') return url;
   
-  const isRelativeApi = 
-    url.startsWith('/api') || 
-    url.startsWith('api/') ||
-    (typeof window !== 'undefined' && url.startsWith(window.location.origin + '/api'));
+  // If the URL is already pointing to our valid cloud backend hosts, do not intercept or change it!
+  const isAlreadyBackend = CANDIDATE_BACKENDS.some(backend => url.startsWith(backend));
+  if (isAlreadyBackend) {
+    return url;
+  }
 
-  if (isRelativeApi) {
+  // Robustly identify relative API routes, local web server paths, or native loopbacks on mobile WebView:
+  const isPlainRelative = url.startsWith('/api') || url.startsWith('api/');
+  const isLocalhostApi = url.includes('localhost/api') || (url.includes('localhost:') && url.includes('/api'));
+  const isIPLocalApi = url.includes('127.0.0.1/api') || url.includes('0.0.0.0/api') || url.includes('10.0.2.2/api');
+  const isCurrentOriginApi = typeof window !== 'undefined' && url.startsWith(window.location.origin + '/api');
+
+  if (isPlainRelative || isLocalhostApi || isIPLocalApi || isCurrentOriginApi) {
     let apiPath = '';
-    if (url.startsWith('/api')) {
-      apiPath = url;
+    const apiIndex = url.indexOf('/api');
+    
+    if (apiIndex !== -1) {
+      apiPath = url.substring(apiIndex);
     } else if (url.startsWith('api/')) {
       apiPath = '/' + url;
-    } else if (typeof window !== 'undefined' && url.startsWith(window.location.origin + '/api')) {
-      apiPath = url.substring(window.location.origin.length);
     }
-    
-    const apiBase = getApiBase();
-    return safeUrlJoin(apiBase, apiPath);
+
+    if (apiPath) {
+      const apiBase = getApiBase();
+      const resolved = safeUrlJoin(apiBase, apiPath);
+      return resolved;
+    }
   }
   
   return url;
@@ -321,18 +331,42 @@ export const applyGlobalNetworkingInterceptors = () => {
       
       const responseCopy = response.clone();
       responseCopy.text().then((bodyText) => {
+        // Collect exact HTTP response headers
+        const headersObj: Record<string, string> = {};
+        response.headers.forEach((value, key) => {
+          headersObj[key] = value;
+        });
+
+        // Detailed live network diagnostics
+        const logsPayload = {
+          url: resolvedUrl,
+          originalUrl: originalUrl,
+          status: response.status,
+          contentType: response.headers.get('content-type') || 'unknown',
+          headers: headersObj,
+          bodySnippet: bodyText.substring(0, 500)
+        };
+
+        console.log(`[NETWORK_DIAGNOSTICS] REQUEST URL: ${resolvedUrl}`);
+        console.log(`[NETWORK_DIAGNOSTICS] HTTP STATUS: ${response.status}`);
+        console.log(`[NETWORK_DIAGNOSTICS] HEADERS:`, JSON.stringify(headersObj, null, 2));
+        console.log(`[NETWORK_DIAGNOSTICS] FIRST 500 CHARACTERS OF BODY:\n${logsPayload.bodySnippet}`);
+
         if (response.ok) {
-          addDiagEntry('info', `📡 [API SUCCESS] HTTP ${response.status}: ${cleanPath}`, {
-            status: response.status,
-            preview: bodyText.substring(0, 150)
-          });
+          addDiagEntry('info', `📡 [API SUCCESS] HTTP ${response.status}: ${cleanPath}`, logsPayload);
         } else {
-          addDiagEntry('error', `📡 [API ERROR] HTTP ${response.status}: ${cleanPath}`, {
-            status: response.status,
-            preview: bodyText.substring(0, 400)
-          });
+          addDiagEntry('error', `📡 [API ERROR] HTTP ${response.status}: ${cleanPath}`, logsPayload);
         }
-      }).catch(() => {});
+
+        // Warn users if an API request returns index.html or other HTML documents
+        if (logsPayload.contentType.includes('text/html') || bodyText.trim().startsWith('<')) {
+          const warningMessage = `🚨 [HTML RESPONSE CRASH WARNING] API request to "${resolvedUrl}" returned an HTML response instead of valid JSON. Content-Type: ${logsPayload.contentType}. Body snippet: ${bodyText.substring(0, 100)}`;
+          addDiagEntry('warn', warningMessage);
+          console.warn(warningMessage);
+        }
+      }).catch((e) => {
+        console.error('[NETWORK_DIAGNOSTICS] Failed to read intercepted response body text clone:', e);
+      });
       return response;
     }).catch((err) => {
       addNetworkLog(logEntry);
