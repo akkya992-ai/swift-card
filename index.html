@@ -222,7 +222,7 @@
         };
 
         window.__promptApiOverride = function() {
-          var current = localStorage.getItem('swiftcart_api_base_override') || 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+          var current = localStorage.getItem('swiftcart_api_base_override') || 'https://swift-cart-700512652396.asia-southeast1.run.app';
           var input = prompt('Please specify the absolute URL of the Daily Mart Node server/API sandbox base directory:', current);
           if (input !== null) {
             var trimmed = input.trim();

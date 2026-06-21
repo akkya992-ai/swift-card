@@ -186,30 +186,16 @@ export default function NetworkDebugPanel() {
                 <button
                   type="button"
                   onClick={() => {
-                    localStorage.setItem('swiftcart_api_base_override', 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
-                    setIpInput('https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
-                    setCustomOverride('https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
-                    setApiBase(getApiBase());
-                    setShowNotification(true);
-                    setTimeout(() => setShowNotification(false), 2000);
-                  }}
-                  className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-[9px] text-indigo-400 font-bold rounded-lg font-mono transition active:scale-95 cursor-pointer"
-                >
-                  SANDBOX (DEV)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    localStorage.setItem('swiftcart_api_base_override', 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
-                    setIpInput('https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
-                    setCustomOverride('https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
+                    localStorage.setItem('swiftcart_api_base_override', 'https://swift-cart-700512652396.asia-southeast1.run.app');
+                    setIpInput('https://swift-cart-700512652396.asia-southeast1.run.app');
+                    setCustomOverride('https://swift-cart-700512652396.asia-southeast1.run.app');
                     setApiBase(getApiBase());
                     setShowNotification(true);
                     setTimeout(() => setShowNotification(false), 2000);
                   }}
                   className="px-2 py-0.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-[9px] text-emerald-400 font-bold rounded-lg font-mono transition active:scale-95 cursor-pointer"
                 >
-                  RELEASE (PRE)
+                  SWIFT-CART SERVER
                 </button>
               </div>
 

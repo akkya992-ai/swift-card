@@ -39,7 +39,7 @@ app.get('/splash.jpg', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'src/assets/images/blinkstore_splash_screen_1781438473720.jpg'));
 });
 app.get('/version.json', (req, res) => {
-  const host = req.get('host') || 'ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+  const host = req.get('host') || 'swift-cart-700512652396.asia-southeast1.run.app';
   const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
   
   let latestVersion = '1.0.1';
@@ -7575,6 +7575,14 @@ async function startServer() {
   } catch (err) {
     console.warn('[FCM STATUS LOG EXCEPTION]', err);
   }
+
+  // Unmatched API requests fallback - ensures native clients always receive a JSON response instead of the index.html fallthrough
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({
+      success: false,
+      error: `API route ${req.method} ${req.path} not found or is misconfigured.`
+    });
+  });
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

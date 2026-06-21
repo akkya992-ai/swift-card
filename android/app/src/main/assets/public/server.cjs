@@ -60,13 +60,48 @@ var import_vite = require("vite");
 var import_genai = require("@google/genai");
 var import_supabase_js = require("@supabase/supabase-js");
 var app = (0, import_express.default)();
-var PORT = 3e3;
+var PORT = Number(process.env.PORT || 3e3);
 app.use(import_express.default.json());
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
 app.get("/icon.jpg", (req, res) => {
   res.sendFile(import_path.default.join(process.cwd(), "src/assets/images/blinkstore_app_icon_1781438456173.jpg"));
 });
 app.get("/splash.jpg", (req, res) => {
   res.sendFile(import_path.default.join(process.cwd(), "src/assets/images/blinkstore_splash_screen_1781438473720.jpg"));
+});
+app.get("/version.json", (req, res) => {
+  const host = req.get("host") || "swift-cart-700512652396.asia-southeast1.run.app";
+  const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+  let latestVersion = "1.0.1";
+  try {
+    const filePath = import_path.default.join(process.cwd(), "public/version.json");
+    if (import_fs.default.existsSync(filePath)) {
+      const content = JSON.parse(import_fs.default.readFileSync(filePath, "utf-8"));
+      if (content && content.latestVersion) {
+        latestVersion = content.latestVersion;
+      }
+    }
+  } catch (err) {
+    console.warn("[VERSION READ ERROR]", err);
+  }
+  res.json({
+    latestVersion,
+    apkUrl: `${protocol}://${host}/assets/app-release.apk`
+  });
 });
 var DelhiStores = {
   s1: { name: "Mahabubabad Main Road Hub", lat: 17.5978, lng: 80.0125 },
@@ -446,8 +481,10 @@ function syncUserToSupabase(user) {
       if (!isUUID(userUUID)) {
         if (user.firebaseUid && isUUID(user.firebaseUid)) {
           userUUID = user.firebaseUid;
+        } else if (isUUID(user.id)) {
+          userUUID = user.id.toLowerCase();
         } else {
-          userUUID = import_crypto.default.randomUUID();
+          userUUID = toUUID(user.id);
         }
         user.uuid = userUUID;
         saveDatabase(db);
@@ -1884,22 +1921,52 @@ async function saveDatabase(dbData, tableHint) {
       }
       const seenEmails = /* @__PURE__ */ new Set();
       const seenPhones = /* @__PURE__ */ new Set();
+      const emailToUserId = /* @__PURE__ */ new Map();
+      const phoneToUserId = /* @__PURE__ */ new Map();
+      try {
+        const { rows: existingDbUsers } = await client.query("SELECT id, email, phone FROM users");
+        for (const row of existingDbUsers) {
+          if (row.email) emailToUserId.set(row.email.trim().toLowerCase(), String(row.id));
+          if (row.phone) phoneToUserId.set(row.phone.trim(), String(row.id));
+        }
+      } catch (dbUsersErr) {
+        console.warn("\u26A0\uFE0F [SUPABASE SYNC WARNING] Could not pre-fetch users to map conflicts:", dbUsersErr.message || dbUsersErr);
+      }
       for (const user of dbData.users) {
         try {
-          const uId = toUUID(user.id);
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const isUUID = (str) => str && uuidRegex.test(str);
+          let uId = "";
+          if (isUUID(user.uuid)) {
+            uId = user.uuid.toLowerCase();
+          } else if (isUUID(user.id)) {
+            uId = user.id.toLowerCase();
+          } else if (user.firebaseUid && isUUID(user.firebaseUid)) {
+            uId = user.firebaseUid;
+          } else {
+            uId = toUUID(user.id);
+          }
           let sEmail = (user.email || "").trim().toLowerCase();
           if (!sEmail.includes("@")) sEmail = `user_${uId.substring(0, 8)}@dailymart.com`;
-          if (seenEmails.has(sEmail)) {
+          let lowerEmail = sEmail.toLowerCase();
+          let emailOwnerId = emailToUserId.get(lowerEmail);
+          while (seenEmails.has(sEmail) || emailOwnerId && emailOwnerId !== uId) {
             const parts = sEmail.split("@");
             sEmail = `${parts[0]}_${uId.substring(0, 5)}@${parts[1]}`;
+            lowerEmail = sEmail.toLowerCase();
+            emailOwnerId = emailToUserId.get(lowerEmail);
           }
           seenEmails.add(sEmail);
+          emailToUserId.set(sEmail, uId);
           let sPhone = (user.phone || "").replace(/\D/g, "");
           if (sPhone.length < 10) sPhone = sPhone.padStart(10, "0");
-          if (seenPhones.has(sPhone)) {
+          let phoneOwnerId = phoneToUserId.get(sPhone);
+          while (seenPhones.has(sPhone) || phoneOwnerId && phoneOwnerId !== uId) {
             sPhone = sPhone.substring(0, 7) + String(Math.floor(Math.random() * 900) + 100);
+            phoneOwnerId = phoneToUserId.get(sPhone);
           }
           seenPhones.add(sPhone);
+          phoneToUserId.set(sPhone, uId);
           await client.query(
             `INSERT INTO users (id, email, phone, password_hash, role, name, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -6272,6 +6339,12 @@ async function startServer() {
   } catch (err) {
     console.warn("[FCM STATUS LOG EXCEPTION]", err);
   }
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({
+      success: false,
+      error: `API route ${req.method} ${req.path} not found or is misconfigured.`
+    });
+  });
   if (process.env.NODE_ENV !== "production") {
     const vite = await (0, import_vite.createServer)({
       server: { middlewareMode: true },

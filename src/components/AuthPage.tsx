@@ -1444,7 +1444,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
                 </label>
                 <input 
                   type="text"
-                  placeholder="https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app"
+                  placeholder="https://swift-cart-700512652396.asia-southeast1.run.app"
                   value={localStorage.getItem('swiftcart_api_base_override') || ''}
                   onChange={(e) => {
                     const val = e.target.value.trim();
