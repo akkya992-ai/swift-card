@@ -13,5 +13,13 @@
     "buildOptions": {
       "releaseType": "APK"
     }
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
+    "CapacitorCookies": {
+      "enabled": true
+    }
   }
 }
