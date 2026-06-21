@@ -127,6 +127,14 @@ export const getApiBase = (): string => {
     }
   }
 
+  // If we are on web browser (non-Capacitor), and there is no explicit manual developer override,
+  // we MUST return an empty string "" to keep all API routes relative.
+  // This completely bypasses Cloud Run's iframe absolute-routing cookie checkpoint redirect (e.g. /__cookie_check.html).
+  if (typeof window !== 'undefined' && !getIsCapacitor()) {
+    logConfigState('', 'Web relative path default');
+    return '';
+  }
+
   // 3. Third priority: Auto-discovered working backend url
   if (typeof window !== 'undefined') {
     const discoveredUrl = localStorage.getItem('swiftcart_auto_discovered_backend');
@@ -232,18 +240,27 @@ export const resolveApiUrl = (url: string): string => {
     }
 
     if (apiPath) {
-      let apiBase = getApiBase();
-      
-      // If we are on native app (Capacitor) or if apiBase is relative/invalid, force the default fallback URL
       const isNative = getIsCapacitor();
-      if (!apiBase || apiBase === '/' || !apiBase.startsWith('http')) {
-        apiBase = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
-      } else if (isNative && apiBase.includes('localhost')) {
-        // A native platform should never request localhost of the host machine unless customized
-        apiBase = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+      const apiBase = getApiBase();
+      
+      if (!isNative) {
+        // For web browsers, keep the URL completely relative if there is no explicit absolute override
+        if (!apiBase || apiBase === '/' || !apiBase.startsWith('http')) {
+          return apiPath;
+        }
+        return safeUrlJoin(apiBase, apiPath);
       }
       
-      const resolved = safeUrlJoin(apiBase, apiPath);
+      // Native Capacitor mobile application logic
+      let nativeBase = apiBase;
+      if (!nativeBase || nativeBase === '/' || !nativeBase.startsWith('http')) {
+        nativeBase = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+      } else if (nativeBase.includes('localhost')) {
+        // A native platform should never request localhost of the host machine unless customized
+        nativeBase = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+      }
+      
+      const resolved = safeUrlJoin(nativeBase, apiPath);
       return resolved;
     }
   }
