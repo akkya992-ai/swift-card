@@ -77,14 +77,28 @@ export const startBackendAutoDiscovery = () => {
     const callerFetch = win.__originalFetchBackup || window.fetch;
 
     callerFetch(healthUrl, { method: 'GET', mode: 'cors', cache: 'no-cache' })
-      .then((res: Response) => {
+      .then(async (res: Response) => {
         if (res.ok) {
-          addDiagEntry('info', `📡 [AUTO DISCOVERY OK] Backend responded at ${base}. Setting as active discovered endpoint.`);
-          localStorage.setItem('swiftcart_auto_discovered_backend', base);
-          
-          // Re-update the config in real-time
-          if (typeof win.__triggerApiConfigRefresh === 'function') {
-            win.__triggerApiConfigRefresh(base);
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('text/html')) {
+            addDiagEntry('warn', `⚠️ [AUTO DISCOVERY REJECT] Backend at ${base} returned HTML instead of JSON. Likely blocked by cookie check.`);
+            return;
+          }
+          try {
+            const data = await res.json();
+            if (data && data.status === 'ok') {
+              addDiagEntry('info', `📡 [AUTO DISCOVERY OK] Backend responded at ${base} with valid status. Setting as active discovered endpoint.`);
+              localStorage.setItem('swiftcart_auto_discovered_backend', base);
+              
+              // Re-update the config in real-time
+              if (typeof win.__triggerApiConfigRefresh === 'function') {
+                win.__triggerApiConfigRefresh(base);
+              }
+            } else {
+              addDiagEntry('warn', `⚠️ [AUTO DISCOVERY REJECT] Backend at ${base} returned JSON but missing status 'ok'.`);
+            }
+          } catch (err: any) {
+            addDiagEntry('warn', `⚠️ [AUTO DISCOVERY REJECT] Backend at ${base} failed to parse JSON: ${err.message}`);
           }
         }
       })
@@ -166,7 +180,10 @@ export const getApiBase = (): string => {
   }
 
   // 5. Fallback to Cloud Run backend URL
-  const fallbackUrl = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+  // For native platforms we default to ais-pre to avoid developer cookie check gates.
+  const fallbackUrl = getIsCapacitor()
+    ? 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app'
+    : 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
   logConfigState(fallbackUrl, 'Default Fallback (Cloud Run backend)');
   return fallbackUrl;
 };
@@ -254,10 +271,10 @@ export const resolveApiUrl = (url: string): string => {
       // Native Capacitor mobile application logic
       let nativeBase = apiBase;
       if (!nativeBase || nativeBase === '/' || !nativeBase.startsWith('http')) {
-        nativeBase = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+        nativeBase = 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
       } else if (nativeBase.includes('localhost')) {
         // A native platform should never request localhost of the host machine unless customized
-        nativeBase = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+        nativeBase = 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
       }
       
       const resolved = safeUrlJoin(nativeBase, apiPath);
