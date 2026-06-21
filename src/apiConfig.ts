@@ -107,29 +107,35 @@ export const startBackendAutoDiscovery = () => {
 export const getApiBase = (): string => {
   // 1. Highest priority: VITE_API_BASE_URL
   const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
-  if (envUrl && envUrl.trim() !== '') {
+  if (envUrl && envUrl.trim() !== '' && envUrl.trim() !== '/') {
     const cleanUrl = envUrl.replace(/\/+$/, '');
-    logConfigState(cleanUrl, 'Environment Variable (VITE_API_BASE_URL)');
-    return cleanUrl;
+    if (cleanUrl && cleanUrl.startsWith('http')) {
+      logConfigState(cleanUrl, 'Environment Variable (VITE_API_BASE_URL)');
+      return cleanUrl;
+    }
   }
 
   // 2. Second priority: localStorage override key
   if (typeof window !== 'undefined') {
     const overrideUrl = localStorage.getItem('swiftcart_api_base_override');
-    if (overrideUrl && overrideUrl.trim() !== '') {
+    if (overrideUrl && overrideUrl.trim() !== '' && overrideUrl.trim() !== '/') {
       const cleanUrl = overrideUrl.replace(/\/+$/, '');
-      logConfigState(cleanUrl, 'LocalStorage Override (swiftcart_api_base_override)');
-      return cleanUrl;
+      if (cleanUrl && cleanUrl.startsWith('http')) {
+        logConfigState(cleanUrl, 'LocalStorage Override (swiftcart_api_base_override)');
+        return cleanUrl;
+      }
     }
   }
 
   // 3. Third priority: Auto-discovered working backend url
   if (typeof window !== 'undefined') {
     const discoveredUrl = localStorage.getItem('swiftcart_auto_discovered_backend');
-    if (discoveredUrl && discoveredUrl.trim() !== '') {
+    if (discoveredUrl && discoveredUrl.trim() !== '' && discoveredUrl.trim() !== '/') {
       const cleanUrl = discoveredUrl.replace(/\/+$/, '');
-      logConfigState(cleanUrl, 'Auto-Discovered Backend (swiftcart_auto_discovered_backend)');
-      return cleanUrl;
+      if (cleanUrl && cleanUrl.startsWith('http')) {
+        logConfigState(cleanUrl, 'Auto-Discovered Backend (swiftcart_auto_discovered_backend)');
+        return cleanUrl;
+      }
     }
   }
 
@@ -226,13 +232,44 @@ export const resolveApiUrl = (url: string): string => {
     }
 
     if (apiPath) {
-      const apiBase = getApiBase();
+      let apiBase = getApiBase();
+      
+      // If we are on native app (Capacitor) or if apiBase is relative/invalid, force the default fallback URL
+      const isNative = getIsCapacitor();
+      if (!apiBase || apiBase === '/' || !apiBase.startsWith('http')) {
+        apiBase = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+      } else if (isNative && apiBase.includes('localhost')) {
+        // A native platform should never request localhost of the host machine unless customized
+        apiBase = 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+      }
+      
       const resolved = safeUrlJoin(apiBase, apiPath);
       return resolved;
     }
   }
   
   return url;
+};
+
+/**
+ * Safe JSON parser to handle cases where backend might return HTML error pages or redirects.
+ * Solves "Unexpected token '<'..." error by throwing a clear network message
+ */
+export const getJsonSafe = async (res: Response): Promise<any> => {
+  const contentType = res.headers.get('content-type') || '';
+  const text = await res.text();
+  
+  if (contentType.includes('text/html') || text.trim().startsWith('<')) {
+    console.warn(`[HTML DETECTED] Expected JSON, got HTML from ${res.url}. Status: ${res.status}. Header Content-Type: ${contentType}. Body snippet: ${text.slice(0, 300)}`);
+    throw new Error(`[Server HTTP ${res.status}] Expected JSON response but received HTML. The backend server might be starting up or under maintenance. URL: ${res.url.split('?')[0]}`);
+  }
+  
+  try {
+    return JSON.parse(text);
+  } catch (err: any) {
+    console.error(`[JSON PARSE ERROR] Failed to parse response from ${res.url}. Status: ${res.status}. Body snippet: ${text.slice(0, 350)}`);
+    throw new Error(`[Server HTTP ${res.status}] Failed to parse response as JSON. Expected structured data but received: "${text.slice(0, 80)}..."`);
+  }
 };
 
 /**

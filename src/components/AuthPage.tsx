@@ -30,7 +30,7 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword 
 } from '../firebase';
-import { getIsCapacitor, getApiBase } from '../apiConfig';
+import { getIsCapacitor, getApiBase, getJsonSafe } from '../apiConfig';
 // @ts-ignore
 import dailyMartLogo from '../assets/images/daily_mart_green_logo_1781598237470.jpg';
 
@@ -193,7 +193,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
       })
     });
 
-    const data = await res.json();
+    const data = await getJsonSafe(res);
     if (!res.ok) {
       throw new Error(data.error || 'Failed to align synchronization with system database.');
     }
@@ -365,7 +365,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
           body: JSON.stringify(bodyObj)
         });
 
-        const data = await res.json();
+        const data = await getJsonSafe(res);
         if (!res.ok) {
           throw new Error(data.error || 'Authenication denied.');
         }
@@ -437,7 +437,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
             body: JSON.stringify(bodyObj)
           });
 
-          const data = await res.json();
+          const data = await getJsonSafe(res);
           if (!res.ok) {
             throw new Error(data.error || 'Authentication denied.');
           }
@@ -494,7 +494,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
           body: JSON.stringify({ phone: cleaned, role: selectedRole })
         });
 
-        const data = await res.json();
+        const data = await getJsonSafe(res);
         if (!res.ok) {
           throw new Error(data.error || 'Failed to dispatch sandbox OTP.');
         }
@@ -513,7 +513,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
           })
         });
 
-        const verifyData = await verifyRes.json();
+        const verifyData = await getJsonSafe(verifyRes);
         if (!verifyRes.ok) {
           throw new Error(verifyData.error || 'Invalid verification code');
         }
@@ -582,7 +582,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
             body: JSON.stringify({ phone: cleaned, role: selectedRole })
           });
 
-          const data = await res.json();
+          const data = await getJsonSafe(res);
           if (!res.ok) {
             throw new Error(data.error || 'Failed to dispatch test verification OTP.');
           }
@@ -629,7 +629,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
           })
         });
 
-        const data = await res.json();
+        const data = await getJsonSafe(res);
         if (!res.ok) {
           throw new Error(data.error || 'Incorrect authorization code. Verification failed.');
         }
