@@ -46,8 +46,8 @@ export const getIsCapacitor = (): boolean => {
   const isCapacitorAndroidOrigin = window.location.hostname === 'localhost' && window.location.port === '';
   
   // Combine rules securely: if verified native platform flag is true,
-  // or Capacitor object is present AND running on a native scheme or Capacitor UA, or mobile WebView native mapping matches
-  return !!(isNativePlatform || hasCapObject || isNativeProtocol || isCapacitorUA || isCapacitorAndroidOrigin);
+  // or running on a native scheme or Capacitor UA, or mobile WebView native mapping matches
+  return !!(isNativePlatform || isNativeProtocol || isCapacitorUA || isCapacitorAndroidOrigin);
 };
 
 export const CANDIDATE_BACKENDS = [
@@ -370,6 +370,32 @@ export const applyGlobalNetworkingInterceptors = () => {
 
     const resolvedUrl = resolveApiUrl(originalUrl);
     const method = init?.method || (input && typeof input === 'object' && (input as any).method) || 'GET';
+
+    // Extract request headers and payload for security auditing & tracking
+    let requestPayload: any = null;
+    try {
+      if (init && init.body) {
+        requestPayload = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
+      } else if (input && typeof input === 'object' && (input as any).body) {
+        const bodyVal = (input as any).body;
+        requestPayload = typeof bodyVal === 'string' ? JSON.parse(bodyVal) : bodyVal;
+      }
+    } catch {}
+
+    const reqHeadersObj: Record<string, string> = {};
+    if (init && init.headers) {
+      if (typeof init.headers.forEach === 'function') {
+        init.headers.forEach((value: string, key: string) => { reqHeadersObj[key] = value; });
+      } else {
+        Object.assign(reqHeadersObj, init.headers);
+      }
+    }
+
+    console.log(`[NETWORK_DIAGNOSTICS OUTGOING]`);
+    console.log(`• URL: ${resolvedUrl}`);
+    console.log(`• Method: ${method}`);
+    console.log(`• Headers:`, JSON.stringify(reqHeadersObj, null, 2));
+    console.log(`• Payload:`, JSON.stringify(requestPayload, null, 2));
 
     const cleanPath = resolvedUrl.split('?')[0];
     const logEntry: Omit<NetworkLog, 'id' | 'timestamp'> = {

@@ -9,7 +9,7 @@ import { Product, Order, SellerProfile, RiderProfile, Category, RestaurantCatego
 import { GoogleGenAI, Type } from '@google/genai';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 app.use(express.json());
 
@@ -37,6 +37,28 @@ app.get('/icon.jpg', (req, res) => {
 });
 app.get('/splash.jpg', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'src/assets/images/blinkstore_splash_screen_1781438473720.jpg'));
+});
+app.get('/version.json', (req, res) => {
+  const host = req.get('host') || 'ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+  const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+  
+  let latestVersion = '1.0.1';
+  try {
+    const filePath = path.join(process.cwd(), 'public/version.json');
+    if (fs.existsSync(filePath)) {
+      const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      if (content && content.latestVersion) {
+        latestVersion = content.latestVersion;
+      }
+    }
+  } catch (err) {
+    console.warn('[VERSION READ ERROR]', err);
+  }
+
+  res.json({
+    latestVersion,
+    apkUrl: `${protocol}://${host}/assets/app-release.apk`
+  });
 });
 
 // Mahabubabad, Telangana Dark Stores Coordinate Map
@@ -517,9 +539,11 @@ function syncUserToSupabase(user: any) {
       if (!isUUID(userUUID)) {
         if (user.firebaseUid && isUUID(user.firebaseUid)) {
           userUUID = user.firebaseUid;
+        } else if (isUUID(user.id)) {
+          userUUID = user.id.toLowerCase();
         } else {
-          // Check if local ID is convertible or if we can extract UUID format, or generate a fresh one
-          userUUID = crypto.randomUUID();
+          // Check if local ID is convertible or if we can extract UUID format, or generate a fresh one deterministically
+          userUUID = toUUID(user.id);
         }
         user.uuid = userUUID;
         saveDatabase(db);
@@ -2255,27 +2279,63 @@ async function saveDatabase(dbData: DatabaseSchema, tableHint?: string): Promise
       // 1. Users & Wallets & Wallet Transactions
       const seenEmails = new Set<string>();
       const seenPhones = new Set<string>();
+
+      // Fetch all existing emails and phones with their corresponding database IDs to prevent unique constraint conflicts across user IDs (users_email_key, users_phone_key)
+      const emailToUserId = new Map<string, string>(); // lowercase_email -> uuid
+      const phoneToUserId = new Map<string, string>(); // phone_number -> uuid
+      try {
+        const { rows: existingDbUsers } = await client.query('SELECT id, email, phone FROM users');
+        for (const row of existingDbUsers) {
+          if (row.email) emailToUserId.set(row.email.trim().toLowerCase(), String(row.id));
+          if (row.phone) phoneToUserId.set(row.phone.trim(), String(row.id));
+        }
+      } catch (dbUsersErr: any) {
+        console.warn('⚠️ [SUPABASE SYNC WARNING] Could not pre-fetch users to map conflicts:', dbUsersErr.message || dbUsersErr);
+      }
+
       for (const user of dbData.users) {
         try {
-          const uId = toUUID(user.id);
+          // Resolve standard or mapped user UUID precisely
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const isUUID = (str: string) => str && uuidRegex.test(str);
+          
+          let uId = '';
+          if (isUUID(user.uuid)) {
+            uId = user.uuid.toLowerCase();
+          } else if (isUUID(user.id)) {
+            uId = user.id.toLowerCase();
+          } else if (user.firebaseUid && isUUID(user.firebaseUid)) {
+            uId = user.firebaseUid;
+          } else {
+            uId = toUUID(user.id);
+          }
+
           let sEmail = (user.email || '').trim().toLowerCase();
           if (!sEmail.includes('@')) sEmail = `user_${uId.substring(0,8)}@dailymart.com`;
           
-          // Deduplicate email dynamically to avoid DB constraint failures
-          if (seenEmails.has(sEmail)) {
+          // Deduplicate email dynamically to avoid DB unique constraint failures (users_email_key)
+          let lowerEmail = sEmail.toLowerCase();
+          let emailOwnerId = emailToUserId.get(lowerEmail);
+          while (seenEmails.has(sEmail) || (emailOwnerId && emailOwnerId !== uId)) {
             const parts = sEmail.split('@');
             sEmail = `${parts[0]}_${uId.substring(0, 5)}@${parts[1]}`;
+            lowerEmail = sEmail.toLowerCase();
+            emailOwnerId = emailToUserId.get(lowerEmail);
           }
           seenEmails.add(sEmail);
+          emailToUserId.set(sEmail, uId);
 
           let sPhone = (user.phone || '').replace(/\D/g, '');
           if (sPhone.length < 10) sPhone = sPhone.padStart(10, '0');
           
-          // Deduplicate phone dynamically to avoid DB constraint failures
-          if (seenPhones.has(sPhone)) {
+          // Deduplicate phone dynamically to avoid DB unique constraint failures (users_phone_key)
+          let phoneOwnerId = phoneToUserId.get(sPhone);
+          while (seenPhones.has(sPhone) || (phoneOwnerId && phoneOwnerId !== uId)) {
             sPhone = sPhone.substring(0, 7) + String(Math.floor(Math.random() * 900) + 100);
+            phoneOwnerId = phoneToUserId.get(sPhone);
           }
           seenPhones.add(sPhone);
+          phoneToUserId.set(sPhone, uId);
 
           await client.query(
             `INSERT INTO users (id, email, phone, password_hash, role, name, created_at)
