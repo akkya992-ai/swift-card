@@ -51,6 +51,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Category, Product, CartItem, Order, UserRole } from '../types';
+import { PushNotifications } from '@capacitor/push-notifications';
 
 // Import our modular sub-components
 import LiveTracking from './LiveTracking';
@@ -297,7 +298,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
 
   // FCM Messaging & Notification preferences State
   const [fcmToken, setFcmToken] = useState(() => {
-    return userProfile.fcmToken || localStorage.getItem('swiftcart_fcm_token') || 'fcm_tok_a3d8_' + Math.random().toString(36).substring(2, 11).toUpperCase() + '_android';
+    return userProfile.fcmToken || localStorage.getItem('swiftcart_fcm_token') || '';
   });
   const [notifPromos, setNotifPromos] = useState(userProfile.notificationSettings?.promos !== false);
   const [notifStatuses, setNotifStatuses] = useState(userProfile.notificationSettings?.orderStatuses !== false);
@@ -307,6 +308,140 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
   const [fcmMessage, setFcmMessage] = useState('');
   const [showFcmCenter, setShowFcmCenter] = useState(false);
   const [realtimeNotificationHistory, setRealtimeNotificationHistory] = useState<any[]>([]);
+
+  // Customer-facing Notification Center state variables for Blinkit-style notification engine
+  const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+  const [customerNotifications, setCustomerNotifications] = useState<any[]>([]);
+  const [activeNotificationTab, setActiveNotificationTab] = useState<'all' | 'order_status' | 'promo' | 'system'>('all');
+
+  // Native Android/iOS background push notification registration with Capacitor Push plugin
+  useEffect(() => {
+    if (!userProfile?.id) return;
+    
+    const initNativeAndWebPush = async () => {
+      try {
+        if (typeof window !== 'undefined' && 'Capacitor' in window && (window as any).Capacitor?.isNativePlatform()) {
+          console.log('📱 [MOBILE DEVICE EXECUTING] Native platform detected. Setting up Android FCM push token flow...');
+          
+          let checkPerm = await PushNotifications.checkPermissions();
+          if (checkPerm.receive === 'prompt') {
+            checkPerm = await PushNotifications.requestPermissions();
+          }
+
+          if (checkPerm.receive === 'granted') {
+            await PushNotifications.register();
+
+            PushNotifications.addListener('registration', (token) => {
+              console.log('🟢 [REAL FCM DEVICE REGISTRATION SUCCESS] Real FCM Token obtained:', token.value);
+              setFcmToken(token.value);
+              localStorage.setItem('swiftcart_fcm_token', token.value);
+              
+              // Automatically register real token with Express server
+              fetch('/api/notifications/register-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: userProfile.id, fcmToken: token.value })
+              }).catch(err => console.error('Failed to sync device push token to backend:', err));
+            });
+
+            PushNotifications.addListener('registrationError', (error) => {
+              console.error('❌ [FCM REGISTRATION ERROR] Native token fetching failed:', error.error);
+            });
+
+            PushNotifications.addListener('pushNotificationReceived', (notification) => {
+              console.log('🔔 [PUSH DECIPIENT ARRIVED]:', notification);
+              // Trigger in-app toast for consistency when app is active
+              triggerPushNotification(
+                notification.title || "Daily Mart Status Alert 🛒", 
+                notification.body || "A pick-up dispatch update occurred.", 
+                'success'
+              );
+              fetchCustomerNotifications();
+            });
+
+            PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+              console.log('👉 [PUSH ACTION PERFORMED]:', action);
+              const data = action.notification.data;
+              if (data && data.orderId) {
+                handleDeepLinkTransition(data.category || 'orderStatuses', data.orderId);
+              }
+            });
+          }
+        }
+      } catch (err: any) {
+        console.warn('⚠️ [Capacitor SDK Bypass] Native push notification flow bypassed on desktop browser iframe frame.', err.message);
+      }
+    };
+
+    initNativeAndWebPush();
+  }, [userProfile?.id]);
+
+  const fetchCustomerNotifications = async () => {
+    if (!userProfile?.id) return;
+    try {
+      const res = await fetch(`/api/notifications/customer/${userProfile.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCustomerNotifications(data);
+      }
+    } catch (err) {
+      console.error('Error fetching customer notifications:', err);
+    }
+  };
+
+  const markNotificationRead = async (id: string) => {
+    if (!userProfile?.id) return;
+    try {
+      await fetch(`/api/notifications/customer/read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notificationId: id, userId: userProfile.id })
+      });
+      setCustomerNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    } catch (err) {
+      console.error('Error marking notification read:', err);
+    }
+  };
+
+  const markAllNotificationsRead = async () => {
+    if (!userProfile?.id) return;
+    try {
+      await fetch(`/api/notifications/customer/read-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userProfile.id })
+      });
+      setCustomerNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    } catch (err) {
+      console.error('Error marking all notifications read:', err);
+    }
+  };
+
+  // Deep Link Navigation routing helper mapped to order details and real-time live tracking
+  const handleDeepLinkTransition = (type: string, orderId: string | null) => {
+    if (!orderId || orderId === 'promo' || orderId === 'none') {
+      // General promo/system navigation: show orders board
+      setActiveTab('orders');
+      return;
+    }
+    const match = orders.find(o => String(o.id) === String(orderId));
+    if (!match) {
+      console.warn('Deep link target order not found in current list, attempting fresh synchronization...');
+      fetchOrders().then(() => {
+        const retryMatch = orders.find(o => String(o.id) === String(orderId));
+        if (retryMatch) {
+          setActiveTrackOrder(retryMatch);
+          setActiveTab('live-tracking');
+        } else {
+          setActiveTab('orders');
+        }
+      });
+      return;
+    }
+
+    setActiveTrackOrder(match);
+    setActiveTab('live-tracking');
+  };
 
   const fetchRealtimeNotificationHistory = async () => {
     try {
@@ -359,6 +494,8 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
           });
         }
       }
+      // Sync DB-backed CRM / Customer Notification Center history
+      await fetchCustomerNotifications();
     } catch (err) {
       console.error("Failed loading backend notification history", err);
     }
@@ -417,8 +554,6 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
 
   // Push notifications queue stack state
   const [toasts, setToasts] = useState<NotificationItem[]>([]);
-  const [notificationsHistory, setNotificationsHistory] = useState<NotificationItem[]>([]);
-  const [isAlertTrayOpen, setIsAlertTrayOpen] = useState(false);
   const [liveBanners, setLiveBanners] = useState<any[]>([]);
 
   // Wishlist state saved in localstorage
@@ -732,7 +867,6 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
     const newAlert: NotificationItem = { id, title, message, timestamp: timeStr, type };
 
     setToasts(prev => [newAlert, ...prev]);
-    setNotificationsHistory(prev => [newAlert, ...prev]);
 
     // Slide out alert after 4.5 seconds
     setTimeout(() => {
@@ -1387,19 +1521,27 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                 )}
               </button>
 
-              {/* Push notifications Inbox toggle icon */}
+              {/* Customer Notification Center Bell Button with unread indicator badge */}
               <button
-                onClick={() => setIsAlertTrayOpen(!isAlertTrayOpen)}
-                className="p-2 rounded-xl hover:bg-emerald-500 transition relative cursor-pointer"
-                title="Notifications History"
+                type="button"
+                onClick={() => {
+                  setShowNotificationCenter(true);
+                  fetchCustomerNotifications();
+                }}
+                className={`p-2 rounded-xl transition cursor-pointer relative ${
+                  showNotificationCenter ? 'bg-emerald-700 text-white' : 'hover:bg-emerald-500 hover:text-yellow-105'
+                }`}
+                title="Open Notification Inbox"
               >
                 <Bell className="w-4.5 h-4.5 text-white" />
-                {notificationsHistory.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-amber-500 text-white rounded-full w-4 h-4 flex items-center justify-center font-black text-[9px] animate-pulse">
-                    {notificationsHistory.length}
+                {customerNotifications.some(n => !n.isRead) && (
+                  <span className="absolute -top-1 -right-1 bg-yellow-400 text-slate-900 border border-emerald-800 rounded-full w-4 h-4 flex items-center justify-center font-black text-[9px] animate-bounce">
+                    {customerNotifications.filter(n => !n.isRead).length}
                   </span>
                 )}
               </button>
+
+
 
               {/* Scan on Mobile QR option */}
               <button
@@ -3426,30 +3568,10 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                     <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md">{wishlist.length} products</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setIsAlertTrayOpen(true)}
-                    className="w-full text-left py-2.5 px-3 hover:bg-slate-50 rounded-2xl transition flex justify-between items-center font-bold text-slate-700 cursor-pointer"
-                  >
-                    <span className="flex items-center gap-2"><span>🔔</span> Notifications Stream</span>
-                    <span className="text-[10px] font-mono text-[#00A86B] bg-emerald-50 px-1.5 py-0.5 rounded-md animate-pulse">Live feed</span>
-                  </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowFcmCenter(!showFcmCenter);
-                      if (!showFcmCenter) {
-                        fetchRealtimeNotificationHistory();
-                      }
-                    }}
-                    className="w-full text-left py-2.5 px-3 hover:bg-slate-50 rounded-2xl transition flex justify-between items-center font-bold text-slate-700 cursor-pointer"
-                  >
-                    <span className="flex items-center gap-2"><span>📡</span> FCM Push Console</span>
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-md ${showFcmCenter ? 'bg-emerald-100 text-emerald-800 font-bold' : 'bg-slate-100 text-slate-500 font-bold'}`}>
-                      {showFcmCenter ? 'Collapse' : 'Configure'}
-                    </span>
-                  </button>
+
+
+
                 </div>
 
                 {/* 4.5 LEGAL & COMPLIANCE SECTION */}
@@ -3496,163 +3618,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                  {/* ======================================================== */}
                 {/* FCM PUSH NOTIFICATIONS & SUBSCRIPTIONS PANEL */}
                 {/* ======================================================== */}
-                {showFcmCenter && (
-                  <div className="bg-white rounded-[32px] p-5 border border-slate-100 shadow-3xs space-y-4 text-left animate-fade-in">
-                    <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
-                      <div>
-                        <h4 className="text-[11px] font-black uppercase text-slate-800 tracking-wider flex items-center gap-1.5">
-                          <span className="text-sm">⚡</span> FCM Push &amp; Best-Effort Delivery
-                        </h4>
-                        <p className="text-[9px] text-slate-400 font-semibold mt-0.5 leading-snug">
-                          FCM-backed push notifications are delivered on a best-effort basis and subject to browser permissions, battery saving, OS sleep timers, and network statuses.
-                        </p>
-                      </div>
-                      <span className="text-[8px] font-mono font-bold bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-md border border-indigo-100 uppercase animate-pulse">
-                        PWA Sync Active
-                      </span>
-                    </div>
 
-                    {/* Android device FCM Token panel */}
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 block">Device Registration Token (Best-effort push routing)</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={fcmToken}
-                          onChange={(e) => setFcmToken(e.target.value)}
-                          placeholder="Retrieve device registration token..."
-                          className="flex-1 bg-slate-50 text-slate-600 border border-slate-200 rounded-xl px-3 py-1.5 text-[10px] font-mono focus:outline-none focus:ring-1 focus:ring-[#00A86B] focus:border-[#00A86B]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const randToken = 'fcm_tok_a3d8_' + Math.random().toString(36).substring(2, 11).toUpperCase() + '_android';
-                            setFcmToken(randToken);
-                          }}
-                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl px-2.5 text-[10px] font-bold transition active:scale-95 cursor-pointer"
-                          title="Simulate acquiring brand-new Android device token"
-                        >
-                          🔄 Regene
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Push Categories toggles */}
-                    <div className="space-y-2.5 bg-slate-50/50 p-3.5 rounded-2xl border border-slate-50 mt-1">
-                      <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider block">FCM Channel Subscriptions</span>
-                      
-                      {/* Item A */}
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <span className="text-[10px] font-black text-slate-700 block">🛍️ Order Status Changes</span>
-                          <span className="text-[8.5px] text-slate-400 font-semibold block leading-tight">Order Placed, Packed, Assigned, Delivering, Delivered</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setNotifStatuses(!notifStatuses)}
-                          className={`w-8 h-4 rounded-full transition relative p-0.5 focus:outline-none cursor-pointer ${notifStatuses ? 'bg-[#00A86B]' : 'bg-slate-300'}`}
-                        >
-                          <span className={`w-3 h-3 bg-white rounded-full block transition-transform shadow-xs ${notifStatuses ? 'translate-x-4' : 'translate-x-0'}`} />
-                        </button>
-                      </div>
-
-                      {/* Item B */}
-                      <div className="flex justify-between items-center border-t border-slate-100/70 pt-2">
-                        <div>
-                          <span className="text-[10px] font-black text-slate-700 block">📢 Promotions & Exclusive Deals</span>
-                          <span className="text-[8.5px] text-slate-400 font-semibold block leading-tight">Limited time discount coupons, flash wallet cashbacks</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setNotifPromos(!notifPromos)}
-                          className={`w-8 h-4 rounded-full transition relative p-0.5 focus:outline-none cursor-pointer ${notifPromos ? 'bg-[#00A86B]' : 'bg-slate-300'}`}
-                        >
-                          <span className={`w-3 h-3 bg-white rounded-full block transition-transform shadow-xs ${notifPromos ? 'translate-x-4' : 'translate-x-0'}`} />
-                        </button>
-                      </div>
-
-                      {/* Item C */}
-                      <div className="flex justify-between items-center border-t border-slate-100/70 pt-2">
-                        <div>
-                          <span className="text-[10px] font-black text-slate-700 block">⚙️ Platform Updates & Warnings</span>
-                          <span className="text-[8.5px] text-slate-400 font-semibold block leading-tight">System upgrades, verification approvals, low Stock alerts</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setNotifAlerts(!notifAlerts)}
-                          className={`w-8 h-4 rounded-full transition relative p-0.5 focus:outline-none cursor-pointer ${notifAlerts ? 'bg-[#00A86B]' : 'bg-slate-300'}`}
-                        >
-                          <span className={`w-3 h-3 bg-white rounded-full block transition-transform shadow-xs ${notifAlerts ? 'translate-x-4' : 'translate-x-0'}`} />
-                        </button>
-                      </div>
-
-                      {/* Item D */}
-                      <div className="flex justify-between items-center border-t border-slate-100/70 pt-2">
-                        <div>
-                          <span className="text-[10px] font-black text-slate-700 block">🔊 Auditory Push Notification Chime</span>
-                          <span className="text-[8.5px] text-slate-400 font-semibold block leading-tight">Play a pleasant soft sound upon notification arrival</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setNotifSound(!notifSound)}
-                          className={`w-8 h-4 rounded-full transition relative p-0.5 focus:outline-none cursor-pointer ${notifSound ? 'bg-[#00A86B]' : 'bg-slate-300'}`}
-                        >
-                          <span className={`w-3 h-3 bg-white rounded-full block transition-transform shadow-xs ${notifSound ? 'translate-x-4' : 'translate-x-0'}`} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Save Settings Trigger */}
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-[9.5px] font-mono text-emerald-600 font-bold max-w-[180px] break-words">
-                        {fcmMessage}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleSaveFCMPreferences}
-                        disabled={fcmSaving}
-                        className="bg-black hover:bg-slate-900 text-white rounded-2xl px-5 py-2 text-[10px] uppercase font-black tracking-wider transition active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
-                      >
-                        {fcmSaving ? 'Saving...' : '💾 Sync settings'}
-                      </button>
-                    </div>
-
-                    {/* Real-time Push Delivery check log list */}
-                    {realtimeNotificationHistory.length > 0 && (
-                      <div className="border-t border-slate-100 pt-3.5 space-y-2">
-                        <div className="flex justify-between items-center text-[9.5px] font-black text-slate-400 uppercase tracking-wider">
-                          <span>📡 Safe FCM Delivery Trace Log</span>
-                          <button
-                            onClick={fetchRealtimeNotificationHistory}
-                            className="text-[#00A86B] font-bold tracking-wider hover:underline"
-                          >
-                            Refresh Logs
-                          </button>
-                        </div>
-
-                        <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1 font-mono text-[9px] scrollbar-thin">
-                          {realtimeNotificationHistory.map((notif, nIdx) => (
-                            <div key={nIdx} className="bg-slate-50 p-2 rounded-xl border border-slate-100 space-y-1">
-                              <div className="flex justify-between items-center text-[8px]">
-                                <span className="text-slate-500 font-semibold">
-                                  {new Date(notif.createdAt).toLocaleTimeString()}
-                                </span>
-                                <span className={`px-1 py-0.5 rounded font-black text-[7px] border uppercase ${
-                                  notif.status === 'sent' 
-                                    ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
-                                    : 'bg-rose-50 text-rose-500 border-rose-100'
-                                }`}>
-                                  {notif.status === 'sent' ? 'FCM DELIVERED' : 'SUPPRESSED'}
-                                </span>
-                              </div>
-                              <p className="text-slate-700 font-medium break-words leading-tight">{notif.message}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* 5. BUSINESS & PARTNER ACCESS SECTION - SELLER, RIDER, ADMIN */}
                 {userProfile?.role && userProfile.role !== 'customer' ? (
@@ -4259,43 +4225,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
 
       </div>
 
-      {/* DYNAMIC BELL NOTIFICATION DETAILED TRAY SLIDEOUT */}
-      {isAlertTrayOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex justify-end z-50 animate-fade-in">
-          <div className="bg-white w-full max-w-sm h-full shadow-2xl flex flex-col justify-between text-left">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <span className="font-black text-sm text-slate-800 uppercase flex items-center gap-1">
-                <Bell className="w-4.5 h-4.5 text-emerald-600" /> Notifications Stream
-              </span>
-              <button 
-                onClick={() => setIsAlertTrayOpen(false)}
-                className="p-1 px-2.5 bg-slate-100 rounded-full text-xs font-bold font-mono"
-              >
-                CLOSE
-              </button>
-            </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {notificationsHistory.length === 0 ? (
-                <div className="text-center py-20 text-slate-400 space-y-2">
-                  <Bell className="w-8 h-8 mx-auto opacity-30" />
-                  <p className="text-xs">No notifications yet, stay tuned!</p>
-                </div>
-              ) : (
-                notificationsHistory.map((item, idx) => (
-                  <div key={idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1 text-xs">
-                    <p className="font-black text-slate-850 flex items-center justify-between">
-                      {item.title}
-                      <span className="text-[8px] opacity-40 font-mono text-slate-400">{item.timestamp}</span>
-                    </p>
-                    <p className="text-slate-500 font-medium leading-normal">{item.message}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* DYNAMIC CART SLIDE DRAWER OVERLAY */}
       {isCartOpen && (
@@ -4550,6 +4480,206 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
           <span className="text-[9px]">My Profile</span>
         </button>
       </div>
+
+      {/* 10-MIN DAILY MART CUSTOMER NOTIFICATION CENTER SLIDE-OVER */}
+      <AnimatePresence>
+        {showNotificationCenter && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex justify-end font-sans text-slate-800"
+            onClick={() => setShowNotificationCenter(false)}
+          >
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="bg-white w-full max-w-md h-full shadow-2xl flex flex-col border-l border-slate-100 placeholder-slate-400"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Drawer Header */}
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                  <h3 className="font-sans font-black text-slate-900 text-base tracking-tight flex items-center gap-2 uppercase">
+                    Notification Center 🔔
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-mono font-black uppercase tracking-wider">
+                    Blinkit-style Instant Dispatch Alerts
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowNotificationCenter(false)}
+                  className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Utility action options */}
+              <div className="px-5 py-3 border-b border-slate-50 bg-white flex items-center justify-between text-xs font-bold text-slate-500">
+                <div className="flex items-center gap-1">
+                  <span>📬</span>
+                  <span>{customerNotifications.length} alerts arrived</span>
+                  {customerNotifications.some(n => !n.isRead) && (
+                    <span className="bg-yellow-105 text-amber-950 bg-yellow-100 text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse">
+                      {customerNotifications.filter(n => !n.isRead).length} new
+                    </span>
+                  )}
+                </div>
+                {customerNotifications.some(n => !n.isRead) && (
+                  <button
+                    type="button"
+                    onClick={markAllNotificationsRead}
+                    className="flex items-center gap-1 text-emerald-600 hover:text-emerald-700 hover:underline transition cursor-pointer shrink-0 font-extrabold uppercase text-[10px]"
+                  >
+                    <span>✓✓</span> Mark all read
+                  </button>
+                )}
+              </div>
+
+              {/* Filter Tabs */}
+              <div className="p-3 border-b border-slate-100 flex items-center gap-1 bg-slate-50/20 overflow-x-auto shrink-0 select-none">
+                <button
+                  onClick={() => setActiveNotificationTab('all')}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase transition shrink-0 cursor-pointer ${
+                    activeNotificationTab === 'all' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setActiveNotificationTab('order_status')}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase transition shrink-0 cursor-pointer ${
+                    activeNotificationTab === 'order_status' ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  Orders
+                </button>
+                <button
+                  onClick={() => setActiveNotificationTab('promo')}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase transition shrink-0 cursor-pointer ${
+                    activeNotificationTab === 'promo' ? 'bg-yellow-500 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  Offers
+                </button>
+                <button
+                  onClick={() => setActiveNotificationTab('system')}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase transition shrink-0 cursor-pointer ${
+                    activeNotificationTab === 'system' ? 'bg-rose-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  Alerts
+                </button>
+              </div>
+
+              {/* Notifications List container */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/40">
+                {customerNotifications.filter(n => {
+                  if (activeNotificationTab === 'all') return true;
+                  return n.type === activeNotificationTab;
+                }).length === 0 ? (
+                  <div className="h-64 flex flex-col items-center justify-center text-center p-4">
+                    <span className="text-3xl mb-3">📭</span>
+                    <p className="text-slate-400 font-bold text-xs uppercase tracking-tight">No notifications found</p>
+                    <p className="text-[10px] text-slate-400 mt-1">When we update your order or dispatch hand-picked offers, they will appear right here!</p>
+                  </div>
+                ) : (
+                  customerNotifications.filter(n => {
+                    if (activeNotificationTab === 'all') return true;
+                    return n.type === activeNotificationTab;
+                  }).map((item: any) => {
+                    const isUnread = !item.isRead;
+                    // Icon and label color pairings based on message type
+                    let typeIcon = "📦";
+                    let typeBadgeClass = "bg-slate-100 text-slate-700";
+                    let typeLabel = "System";
+
+                    if (item.type === 'order_status') {
+                      typeIcon = "🛒";
+                      typeBadgeClass = "bg-emerald-50 text-emerald-700 border border-emerald-100";
+                      typeLabel = "Order Updates";
+                    } else if (item.type === 'promo') {
+                      typeIcon = "🏷️";
+                      typeBadgeClass = "bg-amber-50 text-amber-700 border border-amber-100";
+                      typeLabel = "Hot Offer";
+                    } else if (item.type === 'system') {
+                      typeIcon = "🚨";
+                      typeBadgeClass = "bg-rose-50 text-rose-700 border border-rose-100";
+                      typeLabel = "System Alert";
+                    }
+
+                    return (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`p-4 rounded-2xl border transition-all duration-200 cursor-pointer text-left relative flex gap-3 ${
+                          isUnread 
+                            ? 'bg-amber-50/40 border-amber-200 shadow-3xs hover:bg-amber-50/60' 
+                            : 'bg-white border-slate-150 hover:bg-slate-50'
+                        }`}
+                        onClick={async () => {
+                          if (isUnread) {
+                            await markNotificationRead(item.id);
+                          }
+                          // Deep Link Navigation steer
+                          handleDeepLinkTransition(item.type, item.orderId);
+                          setShowNotificationCenter(false);
+                        }}
+                      >
+                        {/* Unread dot indicator */}
+                        {isUnread && (
+                          <span className="absolute top-4 right-4 w-2.5 h-2.5 bg-yellow-500 rounded-full shadow-md animate-pulse"></span>
+                        )}
+
+                        {/* Visual Icon */}
+                        <div className="shrink-0 flex items-center justify-center w-10 h-10 bg-slate-50 border border-slate-100 rounded-xl font-sans text-lg">
+                          <span>{typeIcon}</span>
+                        </div>
+
+                        {/* Notification content */}
+                        <div className="flex-1 space-y-1 min-w-0 pr-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${typeBadgeClass}`}>
+                              {typeLabel}
+                            </span>
+                            {item.orderId && item.orderId !== 'none' && item.orderId !== 'promo' && (
+                              <span className="text-[9px] font-mono font-black uppercase text-slate-400 tracking-wider">
+                                Order #{item.orderId.substring(0, 8)}
+                              </span>
+                            )}
+                          </div>
+
+                          <h4 className={`text-xs font-black tracking-tight leading-tight ${isUnread ? 'text-slate-900' : 'text-slate-700'}`}>
+                            {item.title}
+                          </h4>
+                          
+                          <p className="text-[11px] text-slate-500 font-medium leading-relaxed break-words">
+                            {item.message}
+                          </p>
+
+                          <div className="text-[9px] font-mono text-slate-400 pt-1 flex items-center justify-between">
+                            <span>{new Date(item.createdAt).toLocaleString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                            {item.orderId && item.orderId !== 'none' && item.orderId !== 'promo' && (
+                              <span className="text-[9px] font-bold text-emerald-600 hover:underline flex items-center gap-0.5">
+                                Tap for details ➔
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* MOBILE SCAN GENERATOR MODAL */}
       <AnimatePresence>

@@ -7,9 +7,33 @@ import Redis from 'ioredis';
 import { createServer as createViteServer } from 'vite';
 import { Product, Order, SellerProfile, RiderProfile, Category, RestaurantCategory, Restaurant, MenuCategory, RestaurantProduct } from './src/types';
 import { GoogleGenAI, Type } from '@google/genai';
+import admin from 'firebase-admin';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+
+// Initialize Firebase Admin SDK safely
+let firebaseAdminApp: any = null;
+try {
+  const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(firebaseConfigPath)) {
+    const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf-8'));
+    const adminAny = admin as any;
+    if (adminAny.apps.length === 0) {
+      firebaseAdminApp = adminAny.initializeApp({
+        credential: process.env.GOOGLE_APPLICATION_CREDENTIALS ? adminAny.credential.applicationDefault() : undefined,
+        projectId: firebaseConfig.projectId
+      });
+      console.log('🟢 [FIREBASE ADMIN SDK] Successfully initialized with project ID:', firebaseConfig.projectId);
+    } else {
+      firebaseAdminApp = adminAny.apps[0];
+    }
+  } else {
+    console.warn('⚠️ [FIREBASE ADMIN SDK WARNING] firebase-applet-config.json not found. Dynamic Push delivery will fallback.');
+  }
+} catch (err: any) {
+  console.warn('⚠️ [FIREBASE ADMIN SDK WARNING] Failed to initialize firebase-admin SDK:', err.message);
+}
 
 app.use(express.json());
 
@@ -965,6 +989,17 @@ interface OutboundNotification {
   alertActionAt?: string;
 }
 
+interface RefreshTokenRecord {
+  id: string;
+  token: string;
+  userId: string;
+  deviceId: string;
+  createdAt: string;
+  expiresAt: string;
+  lastUsedAt: string;
+  isRotated?: boolean;
+}
+
 // Interface representing our in-memory database
 interface DatabaseSchema {
   products: Product[];
@@ -986,6 +1021,8 @@ interface DatabaseSchema {
   hostels?: any[];
   tiffinCategories?: any[];
   tiffinItems?: any[];
+  refreshTokens?: RefreshTokenRecord[];
+  customerNotifications?: any[];
 }
 
 const DEFAULT_CATEGORIES: Category[] = [
@@ -1250,7 +1287,8 @@ const DEFAULT_USERS: UserRecord[] = [];
 // Helper to generate JWT simulation token
 export function generateJWT(payload: any): string {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  const payloadEncoded = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + 24 * 60 * 60 * 1000 })).toString('base64url');
+  // Access Token: 15 minutes lifetime
+  const payloadEncoded = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + 15 * 60 * 1000 })).toString('base64url');
   const signature = 'swiftcart_hmac_sha256_symmetric_signature';
   return `${header}.${payloadEncoded}.${signature}`;
 }
@@ -1264,11 +1302,191 @@ export function verifyJWT(token: string): any {
     const decodedPayloadStr = Buffer.from(parts[1], 'base64url').toString('utf8');
     const payload = JSON.parse(decodedPayloadStr);
     if (payload.exp && payload.exp < Date.now()) {
-      return null;
+      console.log(`[AUTH SESSION EXPIRED] Access token expired at ${new Date(payload.exp).toISOString()} for id: ${payload.id}`);
+      return null; // Reject expired token immediately!
     }
     return payload;
   } catch (error) {
     return null;
+  }
+}
+
+// Audit logger for authentication security events
+export function logAuthAudit(event: string, userId: string, deviceId: string, metadata?: any) {
+  console.log(`[AUTH AUDIT LOG] [${new Date().toISOString()}] EVENT: ${event} | USER: ${userId} | DEVICE: ${deviceId || 'unknown'} | METADATA: ${JSON.stringify(metadata || {})}`);
+}
+
+// Helper to generate secure refresh session
+export async function createRefreshSession(userId: string, deviceId: string): Promise<string> {
+  const token = crypto.randomBytes(40).toString('hex');
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000); // 90 days lifetime
+
+  logAuthAudit('SESSION_CREATE', userId, deviceId, { expiresAt: expiresAt.toISOString() });
+
+  if (pgPool) {
+    try {
+      await pgPool.query(
+        `INSERT INTO refresh_tokens (token, user_id, device_id, expires_at)
+         VALUES ($1, $2, $3, $4)`,
+        [token, userId, deviceId, expiresAt]
+      );
+      return token;
+    } catch (err: any) {
+      console.error('[SESSION MANAGER ERROR] Failed to store refresh token in PG:', err.message || err);
+    }
+  }
+
+  // Fallback to offline/memory setup
+  if (!db.refreshTokens) {
+    db.refreshTokens = [];
+  }
+  db.refreshTokens.push({
+    id: 'rt_' + Math.random().toString(36).slice(2, 11),
+    token,
+    userId,
+    deviceId,
+    createdAt: now.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+    lastUsedAt: now.toISOString()
+  });
+  saveDatabase(db);
+  return token;
+}
+
+// Helper to rotate refresh token and handle replay/theft verification
+export async function rotateRefreshSession(oldToken: string, deviceId: string): Promise<{ accessToken: string; refreshToken: string; user: any }> {
+  const now = new Date();
+
+  if (pgPool) {
+    const { rows } = await pgPool.query(
+      `SELECT * FROM refresh_tokens WHERE token = $1`,
+      [oldToken]
+    );
+
+    if (rows.length === 0) {
+      console.warn(`[AUTH EXCEPTION] Unknown refresh token look up attempted: ${oldToken.substring(0, 8)}...`);
+      throw new Error('Invalid or unknown session token');
+    }
+
+    const session = rows[0];
+
+    // Replay attack / theft detection check
+    if (session.is_rotated) {
+      logAuthAudit('REPLAY_ATTACK_DETECTED', session.user_id, deviceId, { oldTokenSnippet: oldToken.substring(0, 8) });
+      // Invalidate all tokens across all devices of the compromised user account
+      await pgPool.query(`DELETE FROM refresh_tokens WHERE user_id = $1`, [session.user_id]);
+      throw new Error('Replay attack detected. compromise protection activated, all sessions revoked.');
+    }
+
+    // Expiry check
+    if (new Date(session.expires_at) < now) {
+      logAuthAudit('SESSION_EXPIRED', session.user_id, deviceId, { oldTokenSnippet: oldToken.substring(0, 8) });
+      await pgPool.query(`DELETE FROM refresh_tokens WHERE id = $1`, [session.id]);
+      throw new Error('Session expired');
+    }
+
+    // Rotate current token: mark is_rotated = true
+    await pgPool.query(
+      `UPDATE refresh_tokens SET is_rotated = TRUE, last_used_at = NOW() WHERE id = $1`,
+      [session.id]
+    );
+
+    const user = await getOrHydrateUserById(session.user_id);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Issue brand new sessions
+    const newRefreshToken = await createRefreshSession(user.id, deviceId);
+    const newAccessToken = generateJWT({ id: user.id, email: user.email, phone: user.phone, role: user.role, name: user.name });
+
+    logAuthAudit('SESSION_ROTATED', user.id, deviceId, { 
+      oldTokenSnippet: oldToken.substring(0, 8), 
+      newTokenSnippet: newRefreshToken.substring(0, 8) 
+    });
+
+    return {
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      user
+    };
+  }
+
+  // Backup Memory Fallback
+  if (!db.refreshTokens) {
+    db.refreshTokens = [];
+  }
+  const session = db.refreshTokens.find(rt => rt.token === oldToken);
+  if (!session) {
+    throw new Error('Invalid or unknown session token');
+  }
+
+  if (session.isRotated) {
+    logAuthAudit('REPLAY_ATTACK_DETECTED', session.userId, deviceId, { oldTokenSnippet: oldToken.substring(0, 8) });
+    db.refreshTokens = db.refreshTokens.filter(rt => rt.userId !== session.userId);
+    saveDatabase(db);
+    throw new Error('Replay attack detected. compromise protection activated, all sessions revoked.');
+  }
+
+  if (new Date(session.expiresAt) < now) {
+    logAuthAudit('SESSION_EXPIRED', session.userId, deviceId, { oldTokenSnippet: oldToken.substring(0, 8) });
+    db.refreshTokens = db.refreshTokens.filter(rt => rt.id !== session.id);
+    saveDatabase(db);
+    throw new Error('Session expired');
+  }
+
+  session.isRotated = true;
+  session.lastUsedAt = now.toISOString();
+
+  const user = await getOrHydrateUserById(session.userId);
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  const newRefreshToken = await createRefreshSession(user.id, deviceId);
+  const newAccessToken = generateJWT({ id: user.id, email: user.email, phone: user.phone, role: user.role, name: user.name });
+
+  logAuthAudit('SESSION_ROTATED', user.id, deviceId, { 
+    oldTokenSnippet: oldToken.substring(0, 8), 
+    newTokenSnippet: newRefreshToken.substring(0, 8) 
+  });
+  saveDatabase(db);
+
+  return {
+    accessToken: newAccessToken,
+    refreshToken: newRefreshToken,
+    user
+  };
+}
+
+// Helper to revoke single refresh token session on single device logout
+export async function revokeSingleSession(token: string): Promise<void> {
+  const payload = verifyJWT(token);
+  const userId = payload ? payload.id : 'unknown';
+  logAuthAudit('SESSION_LOGOUT_SINGLE_DEVICE', userId, 'unknown', { tokenSnippet: token.substring(0, 8) });
+
+  if (pgPool) {
+    await pgPool.query(`DELETE FROM refresh_tokens WHERE token = $1`, [token]);
+  } else {
+    if (db.refreshTokens) {
+      db.refreshTokens = db.refreshTokens.filter(rt => rt.token !== token);
+      saveDatabase(db);
+    }
+  }
+}
+
+// Helper to revoke all refresh tokens sessions across all devices
+export async function revokeAllSessionsForUser(userId: string): Promise<void> {
+  logAuthAudit('SESSION_LOGOUT_ALL_DEVICES', userId, 'all');
+
+  if (pgPool) {
+    await pgPool.query(`DELETE FROM refresh_tokens WHERE user_id = $1`, [userId]);
+  } else {
+    if (db.refreshTokens) {
+      db.refreshTokens = db.refreshTokens.filter(rt => rt.userId !== userId);
+      saveDatabase(db);
+    }
   }
 }
 
@@ -1555,6 +1773,41 @@ async function syncWithSupabaseOnStartup(): Promise<DatabaseSchema> {
         `);
         await client.query(`
           CREATE INDEX IF NOT EXISTS idx_notification_tokens_user ON notification_tokens(user_id);
+        `);
+
+        // Create customer_notifications table if it doesn't exist to support customer history and unread badges
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS customer_notifications (
+            id VARCHAR(100) PRIMARY KEY,
+            customer_id VARCHAR(100) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            type VARCHAR(50) NOT NULL,
+            order_id VARCHAR(100),
+            is_read BOOLEAN DEFAULT FALSE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+          );
+        `);
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_customer_notifications_customer ON customer_notifications(customer_id);
+        `);
+
+        // Create refresh_tokens table to store enterprise sessions securely on pgPool
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS refresh_tokens (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            token TEXT UNIQUE NOT NULL,
+            user_id VARCHAR(100) NOT NULL,
+            device_id VARCHAR(100) NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            last_used_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            is_rotated BOOLEAN DEFAULT FALSE NOT NULL
+          );
+        `);
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
+          CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
         `);
 
         // Create Restaurant Marketplace tables
@@ -2086,6 +2339,7 @@ function loadDatabase(): DatabaseSchema {
         banners: parsed.banners || DEFAULT_BANNERS,
         roleRequests: parsed.roleRequests || [],
         outboundNotifications: parsed.outboundNotifications || [],
+        refreshTokens: parsed.refreshTokens || [],
         restaurantCategories: parsed.restaurantCategories || [
           { id: 'rc_1', name: '[Category Slot A]', image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=120' },
           { id: 'rc_2', name: '[Category Slot B]', image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=120' }
@@ -2152,6 +2406,7 @@ function loadDatabase(): DatabaseSchema {
     banners: DEFAULT_BANNERS,
     roleRequests: [],
     outboundNotifications: [],
+    refreshTokens: [],
     restaurantCategories: [
       { id: 'rc_1', name: '[Category Slot A]', image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=120' },
       { id: 'rc_2', name: '[Category Slot B]', image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=120' }
@@ -3375,8 +3630,9 @@ app.delete('/api/customers/:id', async (req, res) => {
   res.json({ success: true, message: 'User and all credentials purged successfully' });
 });
 
-app.post('/api/auth/verify-otp', (req, res) => {
-  const { phone, otp, role, storeName, ownerName, email, address, vehicleNumber, name } = req.body;
+app.post('/api/auth/verify-otp', async (req, res) => {
+  const { phone, otp, role, storeName, ownerName, email, address, vehicleNumber, name, deviceId } = req.body;
+  const targetDevice = deviceId || 'unknown_web_device';
 
   if (!phone || !otp) {
     return res.status(400).json({ error: 'Phone and OTP are required' });
@@ -3395,15 +3651,24 @@ app.post('/api/auth/verify-otp', (req, res) => {
   const matchedUsers = db.users.filter(u => u.phone === phone || u.phone === cleanPhone);
 
   if (matchedUsers.length > 1) {
+    const rolesPayload = await Promise.all(
+      matchedUsers.map(async u => {
+        const token = generateJWT({ id: u.id, email: u.email, phone: u.phone, role: u.role, name: u.name });
+        const refreshToken = await createRefreshSession(u.id, targetDevice);
+        return {
+          role: u.role,
+          token,
+          refreshToken,
+          profile: getResponseProfile(u)
+        };
+      })
+    );
+
     // If multiple roles exist for the same phone number, return all of them so client can select
     return res.json({
       success: true,
       multipleRoles: true,
-      roles: matchedUsers.map(u => ({
-        role: u.role,
-        token: generateJWT({ id: u.id, email: u.email, phone: u.phone, role: u.role, name: u.name }),
-        profile: getResponseProfile(u)
-      }))
+      roles: rolesPayload
     });
   }
 
@@ -3521,18 +3786,21 @@ app.post('/api/auth/verify-otp', (req, res) => {
 
   // Generate JWT simulation token
   const token = generateJWT({ id: user.id, email: user.email, phone: user.phone, role: user.role, name: user.name });
+  const refreshToken = await createRefreshSession(user.id, targetDevice);
 
   return res.json({
     success: true,
     token,
+    refreshToken,
     role: user.role,
     profile: getResponseProfile(user)
   });
 });
 
 // Email & Password Auth Routes
-app.post('/api/auth/login-email', (req, res) => {
-  const { email, password, role, name } = req.body;
+app.post('/api/auth/login-email', async (req, res) => {
+  const { email, password, role, name, deviceId } = req.body;
+  const targetDevice = deviceId || 'unknown_web_device';
 
   if (!email || !password || !role) {
     return res.status(400).json({ error: 'Email, password, and role are required' });
@@ -3570,12 +3838,14 @@ app.post('/api/auth/login-email', (req, res) => {
   // Sync user profile with Supabase users table
   syncUserToSupabase(user);
 
-  // Generate token
+  // Generate token and refresh token
   const token = generateJWT({ id: user.id, email: user.email, phone: user.phone, role: user.role, name: user.name });
+  const refreshToken = await createRefreshSession(user.id, targetDevice);
 
   return res.json({
     success: true,
     token,
+    refreshToken,
     role: user.role,
     profile: {
       id: user.id,
@@ -3591,7 +3861,7 @@ app.post('/api/auth/login-email', (req, res) => {
 });
 
 // Onboarding Registration (Signup Page)
-app.post('/api/auth/signup', (req, res) => {
+app.post('/api/auth/signup', async (req, res) => {
   const { 
     email, 
     phone, 
@@ -3600,8 +3870,10 @@ app.post('/api/auth/signup', (req, res) => {
     address,
     role: requestedRole,
     storeName,
-    vehicleNumber
+    vehicleNumber,
+    deviceId
   } = req.body;
+  const targetDevice = deviceId || 'unknown_web_device';
 
   // Security constraint: Force new signups to 'customer' role.
   const role = 'customer';
@@ -3679,12 +3951,14 @@ app.post('/api/auth/signup', (req, res) => {
   // Sync user profile with Supabase users table
   syncUserToSupabase(newUser);
 
-  // Generate session Token
+  // Generate session Token and Refresh Token
   const token = generateJWT({ id: newUser.id, email: newUser.email, phone: newUser.phone, role: newUser.role, name: newUser.name });
+  const refreshToken = await createRefreshSession(newUser.id, targetDevice);
 
   return res.json({
     success: true,
     token,
+    refreshToken,
     role: newUser.role,
     profile: getResponseProfile(newUser)
   });
@@ -3852,9 +4126,60 @@ app.get('/api/auth/verify-token', async (req, res) => {
 
   return res.json({
     success: true,
+    token: token, // Enforce short-lived expiry check from verifyJWT
     role: user.role,
     profile: getResponseProfile(user)
   });
+});
+
+// Rotate sessions endpoint: obtain fresh access/refresh tokens
+app.post('/api/auth/refresh', async (req, res) => {
+  const { refreshToken, deviceId } = req.body;
+  const targetDevice = deviceId || 'unknown_web_device';
+
+  if (!refreshToken) {
+    return res.status(400).json({ error: 'Refresh token is required' });
+  }
+
+  try {
+    const sessionData = await rotateRefreshSession(refreshToken, targetDevice);
+    return res.json({
+      success: true,
+      token: sessionData.accessToken,
+      refreshToken: sessionData.refreshToken,
+      role: sessionData.user.role,
+      profile: getResponseProfile(sessionData.user)
+    });
+  } catch (error: any) {
+    console.warn(`[AUTH REFRESH FAILURE] ${error.message}`);
+    const errorMessage = error.message || 'Session expired or invalid refresh credentials';
+    // Return unauthorized if token rotated/compromised or expired
+    return res.status(401).json({ error: errorMessage });
+  }
+});
+
+// Single Device Logout
+app.post('/api/auth/logout', async (req, res) => {
+  const { refreshToken } = req.body;
+  if (refreshToken) {
+    await revokeSingleSession(refreshToken);
+  }
+  return res.json({ success: true, message: 'Logged out successfully from this device' });
+});
+
+// Logout from All Devices
+app.post('/api/auth/logout-all', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authorization header required' });
+  }
+  const token = authHeader.split(' ')[1];
+  const payload = verifyJWT(token);
+  if (!payload) {
+    return res.status(401).json({ error: 'Invalid or expired access token' });
+  }
+  await revokeAllSessionsForUser(payload.id);
+  return res.json({ success: true, message: 'Successfully logged out of all connected device sessions' });
 });
 
 // Secure endpoint to verify admin password before launching Admin Workspace
@@ -4022,21 +4347,8 @@ export function sendFCMNotification(params: FCMPushMessage) {
     status = 'failed';
     failedReason = 'Muted by client-side rule filter preferences';
   } else {
-    // We intentionally simulate a random 15% network dropout rate for demonstrations of queue recovery
-    const roll = Math.random();
-    if (roll < 0.15 && hasFcm) {
-      status = 'sent'; // Dispatched to gateway, pending receipt
-      retryLogs.push(`[${new Date().toISOString()}] Push initiated but target device temporarily offline. Enqueueing in automatic retry queue.`);
-      fcmRetryQueue.push({
-        notificationId: notId,
-        attempts: 0,
-        maxAttempts: 3,
-        nextRun: Date.now() + 4000
-      });
-    } else {
-      status = 'delivered';
-      retryLogs.push(`[${new Date().toISOString()}] Delivered successfully via primary ${channel.toUpperCase()} channel.`);
-    }
+    status = 'delivered';
+    retryLogs.push(`[${new Date().toISOString()}] Delivered successfully via primary ${channel.toUpperCase()} channel.`);
   }
 
   // Resolve notification priority
@@ -4075,6 +4387,94 @@ export function sendFCMNotification(params: FCMPushMessage) {
 
   console.log(`📡 [FCM DISPATCH TELEMETRY] Sent on channel: ${channel.toUpperCase()} | Allowed: ${allowed} | Status: ${status} | Priority: ${finalPriority}`);
   saveDatabase(db);
+
+  // Deliver Real Firebase Cloud Messaging (FCM) using firebase-admin SDK if available
+  if (hasFcm && user && user.fcmToken && allowed) {
+    if (firebaseAdminApp) {
+      const payload: any = {
+        token: user.fcmToken,
+        notification: {
+          title: title,
+          body: message,
+        },
+        data: {
+          title: title,
+          body: message,
+          orderId: orderId || 'none',
+          category: category || 'general',
+          actionUrl: actionUrl || ''
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            priority: 'high',
+            channelId: 'dailymart_channel'
+          }
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+              contentAvailable: true
+            }
+          }
+        }
+      };
+
+      const adminAny = admin as any;
+      adminAny.messaging().send(payload)
+        .then((fcmMsgId: any) => {
+          console.log(`🟢 [REAL FCM SUCCESS] Successfully delivered real push packet to device for user ${userId}. MsgID: ${fcmMsgId}`);
+        })
+        .catch((fcmErr: any) => {
+          console.error(`❌ [REAL FCM FAILED] Messaging target token ${user.fcmToken.substring(0, 15)}... failed: ${fcmErr.message}`);
+        });
+    } else {
+      console.warn(`⚠️ [REAL FCM SKIPPED] Firebase Admin SDK matches but application is not initialized with external credentials.`);
+    }
+  }
+
+  // Persist notification for Customer Notification Center (PostgreSQL table sync)
+  if (recipientRole === 'customer' && user) {
+    const custNotifId = 'cust_notif_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    const eventTypeMap: Record<string, string> = { 'orderStatuses': 'order_status', 'promos': 'promo', 'systemAlerts': 'system' };
+    const mappedType = eventTypeMap[category] || category || 'general';
+    const custNotif = {
+      id: custNotifId,
+      customerId: userId,
+      title,
+      message,
+      type: mappedType,
+      orderId: orderId || null,
+      isRead: false,
+      createdAt: nowStr
+    };
+
+    db.customerNotifications = db.customerNotifications || [];
+    db.customerNotifications.unshift(custNotif);
+    saveDatabase(db);
+    
+    // Save in PostgreSQL if pgPool is available
+    if (pgPool) {
+      pgPool.connect().then(async (client) => {
+        try {
+          await client.query(`
+            INSERT INTO customer_notifications (id, customer_id, title, message, type, order_id, is_read, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+          `, [custNotifId, userId, title, message, custNotif.type, custNotif.orderId, false]);
+          console.log(`🟢 [PG PERSIST] Saved customer notification history for ${userId} inside PG`);
+        } catch (err: any) {
+          console.error('❌ [PG PERSIST ERROR] Failed to save customer notification:', err.message);
+        } finally {
+          client.release();
+        }
+      }).catch(err => {
+        console.error('❌ [PG CONNECTION ERROR] failed to connect for customer history save:', err.message);
+      });
+    }
+  }
 }
 
 // Helper to broadcast promo notifications to all customer accounts
@@ -4171,6 +4571,133 @@ app.post('/api/notifications/settings', (req, res) => {
   }
 
   return res.status(404).json({ error: 'User session not found' });
+});
+
+// GET customer notification center history with 90-days automatic pruning
+app.get('/api/notifications/customer/:customerId', (req, res) => {
+  const { customerId } = req.params;
+
+  // Pruning logic: older than 90 days
+  const ninetyDaysAgo = new Date();
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+  const cutoffTime = ninetyDaysAgo.getTime();
+
+  // Prune local memory representation
+  db.customerNotifications = db.customerNotifications || [];
+  db.customerNotifications = db.customerNotifications.filter((n: any) => new Date(n.createdAt).getTime() >= cutoffTime);
+  saveDatabase(db);
+
+  const localList = db.customerNotifications.filter((n: any) => n.customerId === customerId);
+
+  if (pgPool) {
+    pgPool.connect().then(async (client) => {
+      try {
+        // Prune database
+        await client.query('DELETE FROM customer_notifications WHERE created_at < $1', [ninetyDaysAgo]);
+
+        // Fetch remaining
+        const { rows } = await client.query(`
+          SELECT * FROM customer_notifications 
+          WHERE customer_id = $1 
+          ORDER BY created_at DESC
+        `, [customerId]);
+
+        return res.json(rows.map(r => ({
+          id: r.id,
+          customerId: r.customer_id,
+          title: r.title,
+          message: r.message,
+          type: r.type,
+          orderId: r.order_id,
+          isRead: r.is_read,
+          createdAt: r.created_at
+        })));
+      } catch (err: any) {
+        console.error('❌ [PG FETCH ERROR] customer notification fetch failed:', err.message);
+        return res.json(localList);
+      } finally {
+        client.release();
+      }
+    }).catch(err => {
+      console.error('❌ [PG CONNECTION ERROR] customer notification fetch connection failed:', err.message);
+      return res.json(localList);
+    });
+  } else {
+    return res.json(localList);
+  }
+});
+
+// POST mark specific customer notification as read
+app.post('/api/notifications/customer/read', (req, res) => {
+  const { notificationId, userId } = req.body;
+  if (!notificationId || !userId) {
+    return res.status(400).json({ error: 'notificationId and userId are required' });
+  }
+
+  db.customerNotifications = db.customerNotifications || [];
+  const notif = db.customerNotifications.find((n: any) => n.id === notificationId && n.customerId === userId);
+  if (notif) {
+    notif.isRead = true;
+  }
+  saveDatabase(db);
+
+  if (pgPool) {
+    pgPool.connect().then(async (client) => {
+      try {
+        await client.query(`
+          UPDATE customer_notifications 
+          SET is_read = TRUE 
+          WHERE id = $1 AND customer_id = $2
+        `, [notificationId, userId]);
+        console.log(`🟢 [PG UPDATE SUCCESS] Notification marked as read: ${notificationId}`);
+      } catch (err: any) {
+        console.error('❌ [PG UPDATE ERROR] failed to update read state in PG:', err.message);
+      } finally {
+        client.release();
+      }
+    }).catch(err => {
+      console.error('❌ [PG CONNECTION ERROR] marking read failed:', err.message);
+    });
+  }
+
+  return res.json({ success: true });
+});
+
+// POST mark all notifications as read for a customer
+app.post('/api/notifications/customer/read-all', (req, res) => {
+  const { userId } = req.body;
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required' });
+  }
+
+  db.customerNotifications = db.customerNotifications || [];
+  db.customerNotifications.forEach((n: any) => {
+    if (n.customerId === userId) {
+      n.isRead = true;
+    }
+  });
+  saveDatabase(db);
+
+  if (pgPool) {
+    pgPool.connect().then(async (client) => {
+      try {
+        await client.query(`
+          UPDATE customer_notifications 
+          SET is_read = TRUE 
+          WHERE customer_id = $1
+        `, [userId]);
+        console.log(`🟢 [PG UPDATE SUCCESS] All notifications marked as read for user ${userId}`);
+      } catch (err: any) {
+        console.error('❌ [PG UPDATE ERROR] failed to update all read states in PG:', err.message);
+      } finally {
+        client.release();
+      }
+    }).catch(err => {
+      console.error('❌ [PG CONNECTION ERROR] batch marking read failed:', err.message);
+    });
+  }
+
+  return res.json({ success: true });
 });
 
 // Endpoint to fetch specific user's notification history (both Outbound and Personal)
@@ -5257,6 +5784,7 @@ app.post('/api/restaurant-products', async (req, res) => {
   db.restaurantProducts = db.restaurantProducts || [];
   db.restaurantProducts.push(newProduct);
   saveDatabase(db);
+  invalidateCacheForTable('restaurant_products');
   res.json(newProduct);
 });
 
@@ -5273,6 +5801,7 @@ app.delete('/api/restaurant-products/:id', async (req, res) => {
 
   db.restaurantProducts = (db.restaurantProducts || []).filter(p => p.id !== id);
   saveDatabase(db);
+  invalidateCacheForTable('restaurant_products');
   res.json({ success: true });
 });
 
@@ -5677,6 +6206,7 @@ app.post('/api/products', async (req, res) => {
 
   db.products.push(newProduct);
   saveDatabase(db);
+  invalidateCacheForTable('products');
 
   return res.json({ success: true, product: newProduct });
 });
@@ -5707,6 +6237,7 @@ app.put('/api/products/:id/stock', async (req, res) => {
 
   db.products[idx].stock = Number(stock ?? 0);
   saveDatabase(db);
+  invalidateCacheForTable('products');
   checkAndLogLowStock(id);
   return res.json({ success: true, product: db.products[idx] });
 });
@@ -5748,6 +6279,7 @@ app.put('/api/products/:id', async (req, res) => {
   };
 
   saveDatabase(db);
+  invalidateCacheForTable('products');
   checkAndLogLowStock(id);
   return res.json({ success: true, product: db.products[idx] });
 });
@@ -5776,6 +6308,7 @@ app.delete('/api/products/:id', async (req, res) => {
 
   db.products = db.products.filter(p => p.id !== id);
   saveDatabase(db);
+  invalidateCacheForTable('products');
   return res.json({ success: true });
 });
 
@@ -7531,6 +8064,7 @@ app.post('/api/admin/reset-db', (req, res) => {
     users: DEFAULT_USERS,
     coupons: DEFAULT_COUPONS,
     banners: DEFAULT_BANNERS,
+    refreshTokens: [],
   };
   saveDatabase(db);
   res.json({ success: true, message: 'Database reset to default template state' });

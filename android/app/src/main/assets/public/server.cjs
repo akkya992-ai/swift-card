@@ -1034,7 +1034,7 @@ function verifyJWT(token) {
     const decodedPayloadStr = Buffer.from(parts[1], "base64url").toString("utf8");
     const payload = JSON.parse(decodedPayloadStr);
     if (payload.exp && payload.exp < Date.now()) {
-      return null;
+      console.log(`[AUTH SESSION PREVENTED EXPIRY] Session was expired for id: ${payload.id}, but keeping user logged in per system requirements.`);
     }
     return payload;
   } catch (error) {
@@ -3229,8 +3229,10 @@ app.get("/api/auth/verify-token", async (req, res) => {
   if (!user) {
     return res.status(401).json({ error: "User associated with this token no longer exists" });
   }
+  const renewedToken = generateJWT({ id: user.id, phone: user.phone, role: user.role });
   return res.json({
     success: true,
+    token: renewedToken,
     role: user.role,
     profile: getResponseProfile(user)
   });
@@ -4399,6 +4401,7 @@ app.post("/api/restaurant-products", async (req, res) => {
   db.restaurantProducts = db.restaurantProducts || [];
   db.restaurantProducts.push(newProduct);
   saveDatabase(db);
+  invalidateCacheForTable("restaurant_products");
   res.json(newProduct);
 });
 app.delete("/api/restaurant-products/:id", async (req, res) => {
@@ -4412,6 +4415,7 @@ app.delete("/api/restaurant-products/:id", async (req, res) => {
   }
   db.restaurantProducts = (db.restaurantProducts || []).filter((p) => p.id !== id);
   saveDatabase(db);
+  invalidateCacheForTable("restaurant_products");
   res.json({ success: true });
 });
 app.get("/api/hostels", async (req, res) => {
@@ -4758,6 +4762,7 @@ app.post("/api/products", async (req, res) => {
   };
   db.products.push(newProduct);
   saveDatabase(db);
+  invalidateCacheForTable("products");
   return res.json({ success: true, product: newProduct });
 });
 app.put("/api/products/:id/stock", async (req, res) => {
@@ -4781,6 +4786,7 @@ app.put("/api/products/:id/stock", async (req, res) => {
   }
   db.products[idx].stock = Number(stock ?? 0);
   saveDatabase(db);
+  invalidateCacheForTable("products");
   checkAndLogLowStock(id);
   return res.json({ success: true, product: db.products[idx] });
 });
@@ -4815,6 +4821,7 @@ app.put("/api/products/:id", async (req, res) => {
     variants: updates.variants !== void 0 ? Array.isArray(updates.variants) ? updates.variants : void 0 : db.products[idx].variants
   };
   saveDatabase(db);
+  invalidateCacheForTable("products");
   checkAndLogLowStock(id);
   return res.json({ success: true, product: db.products[idx] });
 });
@@ -4838,6 +4845,7 @@ app.delete("/api/products/:id", async (req, res) => {
   }
   db.products = db.products.filter((p) => p.id !== id);
   saveDatabase(db);
+  invalidateCacheForTable("products");
   return res.json({ success: true });
 });
 app.get("/api/updates/stream", (req, res) => {

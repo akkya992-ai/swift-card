@@ -10,7 +10,6 @@ import RiderDashboard from './components/RiderDashboard';
 import LegalPages from './components/LegalPages';
 import RoleSelector from './components/RoleSelector';
 import { getIsCapacitor, getApiBase } from './apiConfig';
-import NetworkDebugPanel from './components/NetworkDebugPanel';
 // @ts-ignore
 import dailyMartLogo from './assets/images/daily_mart_green_logo_1781598237470.jpg';
 
@@ -41,7 +40,10 @@ export default function App() {
   const [selectedRole, setSelectedRole] = useState<UserRole>('customer');
   const [userProfile, setUserProfile] = useState<any>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [currentPath, setCurrentPath] = useState(() => {
+    const raw = typeof window !== 'undefined' ? window.location.pathname : '/';
+    return raw === '/index.html' || raw.endsWith('/index.html') ? '/' : raw;
+  });
   
   // Loading & status flags
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -345,7 +347,8 @@ export default function App() {
     tryRecoverySession();
     
     const handleLocationChange = () => {
-      const path = window.location.pathname;
+      const raw = window.location.pathname;
+      const path = raw === '/index.html' || raw.endsWith('/index.html') ? '/' : raw;
       setCurrentPath(path);
       
       // Auto adjust selected view based on active path
@@ -627,10 +630,18 @@ export default function App() {
 
       const data = await res.json();
       if (res.ok && data.success) {
-        setToken(savedToken);
+        const activeToken = data.token || savedToken;
+        setToken(activeToken);
+        if (data.token) {
+          localStorage.setItem('swiftcart_jwt_token', data.token);
+        }
+        if (data.profile) {
+          localStorage.setItem('swiftcart_user_profile', JSON.stringify(data.profile));
+        }
         
         // Sync role based on path on load
-        const pathname = window.location.pathname;
+        const rawPath = window.location.pathname;
+        const pathname = rawPath === '/index.html' || rawPath.endsWith('/index.html') ? '/' : rawPath;
         const actualRole = data.role;
         let roleToSet = 'customer';
 
@@ -699,18 +710,139 @@ export default function App() {
         setIsAuthenticated(true);
         console.log('[SESSION ENGINE] Recovered JWT for active user: ', data.profile.email);
       } else {
+        const isExplicitAuthFailure = res.status === 401 || res.status === 403;
+        
+        // Attempt Silent L2 session restoration using refresh token rotation first!
+        if (res.status === 401) {
+          const cachedRefreshToken = localStorage.getItem('swiftcart_refresh_token');
+          if (cachedRefreshToken) {
+            if (typeof window !== 'undefined') {
+              const win = window as any;
+              win.__addDiagnosticLog?.('info', '🔄 [SESSION SILENT ATTEMPT] Access token was expired. Attempting silent secure refresh token rotation...');
+            }
+            try {
+              const refreshRes = await fetch('/api/auth/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken: cachedRefreshToken })
+              });
+              const refreshData = await refreshRes.json();
+
+              if (refreshRes.ok && refreshData.success) {
+                setToken(refreshData.token);
+                localStorage.setItem('swiftcart_jwt_token', refreshData.token);
+                if (refreshData.refreshToken) {
+                  localStorage.setItem('swiftcart_refresh_token', refreshData.refreshToken);
+                }
+                if (refreshData.profile) {
+                  localStorage.setItem('swiftcart_user_profile', JSON.stringify(refreshData.profile));
+                }
+
+                if (typeof window !== 'undefined') {
+                  const win = window as any;
+                  win.__addDiagnosticLog?.('info', `✅ [SESSION SILENT ATTEMPT SUCCESS] Successfully restored L2 session with newly rotated keys for: ${refreshData.profile?.email || 'N/A'}`);
+                }
+
+                // Hydrate view state dynamically and skip auth destruction
+                const rawPath = window.location.pathname;
+                const pathname = rawPath === '/index.html' || rawPath.endsWith('/index.html') ? '/' : rawPath;
+                const actualRole = refreshData.role || 'customer';
+                let roleToSet = 'customer';
+
+                if (pathname === '/admin' && actualRole === 'admin') roleToSet = 'admin';
+                else if (pathname === '/seller' && actualRole === 'seller') roleToSet = 'seller';
+                else if (pathname === '/rider' && actualRole === 'rider') roleToSet = 'rider';
+                else if (pathname === '/' || pathname === '') roleToSet = actualRole;
+
+                setSelectedRole(roleToSet as UserRole);
+                setUserProfile(refreshData.profile);
+                setIsAuthenticated(true);
+                setSessionLoading(false);
+                return;
+              } else {
+                if (typeof window !== 'undefined') {
+                  const win = window as any;
+                  win.__addDiagnosticLog?.('warn', `⚠️ [SESSION SILENT ATTEMPT FAILED] Silent token rotation rejected by master vault: ${refreshData.error || 'N/A'}. Purging keys.`);
+                }
+              }
+            } catch (errRefresh) {
+              console.error('[SILENT REFRESH RECOVERY REJECTED]', errRefresh);
+            }
+          }
+        }
+
         if (typeof window !== 'undefined') {
           const win = window as any;
-          win.__addDiagnosticLog?.('warn', `⚠️ [SESSION RESTORE ENGINE] Token verify-token check failed. Server message: ${data.error || 'Authentication rejected'}. Clearing cached token.`);
+          win.__addDiagnosticLog?.('warn', `⚠️ [SESSION RESTORE ENGINE] Token verify-token check failed. Status: ${res.status}. Server message: ${data.error || 'Authentication rejected'}. ${isExplicitAuthFailure ? 'Clearing cached token.' : 'Retaining token and attempting L1 Restore.'}`);
         }
-        localStorage.removeItem('swiftcart_jwt_token');
+        
+        if (isExplicitAuthFailure) {
+          localStorage.removeItem('swiftcart_jwt_token');
+          localStorage.removeItem('swiftcart_refresh_token');
+          localStorage.removeItem('swiftcart_user_profile');
+        } else {
+          // It's a non-auth server error (e.g. 502/503/504 gateway/cold-start error), try cached credentials fallback
+          try {
+            const cachedProfileStr = localStorage.getItem('swiftcart_user_profile');
+            if (cachedProfileStr) {
+              const cachedProfile = JSON.parse(cachedProfileStr);
+              setUserProfile(cachedProfile);
+              setToken(savedToken);
+              setIsAuthenticated(true);
+              
+              const rawPath = window.location.pathname;
+              const pathname = rawPath === '/index.html' || rawPath.endsWith('/index.html') ? '/' : rawPath;
+              const actualRole = cachedProfile.role || 'customer';
+              let roleToSet = 'customer';
+              if (pathname === '/admin' && actualRole === 'admin') roleToSet = 'admin';
+              else if (pathname === '/seller' && actualRole === 'seller') roleToSet = 'seller';
+              else if (pathname === '/rider' && actualRole === 'rider') roleToSet = 'rider';
+              else if (pathname === '/' || pathname === '') roleToSet = actualRole;
+              setSelectedRole(roleToSet as UserRole);
+              
+              if (typeof window !== 'undefined') {
+                const win = window as any;
+                win.__addDiagnosticLog?.('info', `✅ [SESSION RESTORE TRANSIT FALLBACK] Successfully restored session offline after gateway status ${res.status} for user: ${cachedProfile.email}`);
+              }
+            }
+          } catch (errJson) {
+            console.error('[SESSION LOCAL DEGRADE ERR]', errJson);
+          }
+        }
       }
     } catch (e: any) {
       if (typeof window !== 'undefined') {
         const win = window as any;
-        win.__addDiagnosticLog?.('error', `❌ [SESSION RESTORE ENGINE] Connection attempt to verify-token failed. Sandbox Node API is unreachable or has high latency: ${e.message || String(e)}`, {
-          error: e
+        win.__addDiagnosticLog?.('warn', `⚠️ [SESSION RESTORE ENGINE] Network request failed. Trying cached L1 offline user session restoration in client WebView...`, {
+          error: e.message || String(e)
         });
+        
+        try {
+          const cachedProfileStr = localStorage.getItem('swiftcart_user_profile');
+          if (cachedProfileStr) {
+            const cachedProfile = JSON.parse(cachedProfileStr);
+            setUserProfile(cachedProfile);
+            setToken(savedToken);
+            setIsAuthenticated(true);
+            
+            // Re-sync current workspace based on path/saved profile role
+            const rawPath = window.location.pathname;
+            const pathname = rawPath === '/index.html' || rawPath.endsWith('/index.html') ? '/' : rawPath;
+            const actualRole = cachedProfile.role || 'customer';
+            let roleToSet = 'customer';
+            if (pathname === '/admin' && actualRole === 'admin') roleToSet = 'admin';
+            else if (pathname === '/seller' && actualRole === 'seller') roleToSet = 'seller';
+            else if (pathname === '/rider' && actualRole === 'rider') roleToSet = 'rider';
+            else if (pathname === '/' || pathname === '') roleToSet = actualRole;
+            setSelectedRole(roleToSet as UserRole);
+            
+            win.__addDiagnosticLog?.('info', `✅ [SESSION RESTORE OFFLINE FALLBACK] Successfully restored offline local workspace for user: ${cachedProfile.email || 'N/A'} (L1 Cached Profile)`);
+          } else {
+            win.__addDiagnosticLog?.('error', `❌ [SESSION RESTORE ENGINE] No cached user profile found in L1 cache store on device.`);
+          }
+        } catch (errJson: any) {
+          win.__addDiagnosticLog?.('error', `❌ [SESSION RESTORE ENGINE] Offline fallback parsing failed: ${errJson.message || String(errJson)}`);
+        }
       }
       console.warn('[SESSION ENGINE] Connection to sandbox failed. Default to auth screen.', e);
     } finally {
@@ -727,6 +859,9 @@ export default function App() {
       (window as any).__addDiagnosticLog?.('info', `🔑 [AUTH EVENT] Login succeeded with identity: ${phone || (profile && profile.phone) || 'N/A'}. Target workspace role: ${role || (profile && profile.role) || 'N/A'}`);
     }
     setUserProfile(profile);
+    if (profile) {
+      localStorage.setItem('swiftcart_user_profile', JSON.stringify(profile));
+    }
     setToken(localStorage.getItem('swiftcart_jwt_token'));
     setIsAuthenticated(true);
     
@@ -743,7 +878,17 @@ export default function App() {
     if (typeof window !== 'undefined') {
       (window as any).__addDiagnosticLog?.('info', `🔑 [AUTH EVENT] User sign out requested for active profile: ${userProfile?.email || 'Authenticated User'}. Wiping transaction caches and redirecting to Customer view.`);
     }
+    const cachedRefreshToken = localStorage.getItem('swiftcart_refresh_token');
+    if (cachedRefreshToken) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: cachedRefreshToken })
+      }).catch(err => console.error('[LOGOUT SYNC ERROR]', err));
+    }
     localStorage.removeItem('swiftcart_jwt_token');
+    localStorage.removeItem('swiftcart_refresh_token');
+    localStorage.removeItem('swiftcart_user_profile');
     sessionStorage.removeItem('is_admin_verified');
     setIsAdminPasswordVerified(false);
     setUserProfile(null);
@@ -759,7 +904,17 @@ export default function App() {
   };
 
   const handleAdminLoginRedirect = () => {
+    const cachedRefreshToken = localStorage.getItem('swiftcart_refresh_token');
+    if (cachedRefreshToken) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: cachedRefreshToken })
+      }).catch(err => console.error('[LOGOUT SYNC ERROR]', err));
+    }
     localStorage.removeItem('swiftcart_jwt_token');
+    localStorage.removeItem('swiftcart_refresh_token');
+    localStorage.removeItem('swiftcart_user_profile');
     sessionStorage.removeItem('is_admin_verified');
     setToken(null);
     setUserProfile(null);
@@ -784,6 +939,9 @@ export default function App() {
       const data = await res.json();
       if (res.ok && data.success) {
         setUserProfile(data.profile);
+        if (data.profile) {
+          localStorage.setItem('swiftcart_user_profile', JSON.stringify(data.profile));
+        }
       }
     } catch (e) {
       console.warn('Failed to refresh user profile:', e);
@@ -1180,7 +1338,9 @@ export default function App() {
                     setAdminVerifyPasswordInput('');
                     setPendingAdminSwitch(null);
                     // Redirect back if cancelling from /admin or if user role is not admin
-                    if (window.location.pathname === '/admin' || userProfile?.role !== 'admin') {
+                    const rawPath = window.location.pathname;
+                    const normalizedPath = rawPath === '/index.html' || rawPath.endsWith('/index.html') ? '/' : rawPath;
+                    if (normalizedPath === '/admin' || userProfile?.role !== 'admin') {
                       navigateRole('customer');
                     }
                   }}
@@ -1315,9 +1475,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* Network and APK API debugging capabilities */}
-      <NetworkDebugPanel />
 
     </div>
   );

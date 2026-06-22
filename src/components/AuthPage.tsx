@@ -206,6 +206,9 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
     if (data.token) {
       localStorage.setItem('swiftcart_jwt_token', data.token);
     }
+    if (data.refreshToken) {
+      localStorage.setItem('swiftcart_refresh_token', data.refreshToken);
+    }
     
     onLoginSuccess(data.profile.phone || data.profile.email, selectedRole, data.profile);
   };
@@ -373,6 +376,9 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
         if (data.token) {
           localStorage.setItem('swiftcart_jwt_token', data.token);
         }
+        if (data.refreshToken) {
+          localStorage.setItem('swiftcart_refresh_token', data.refreshToken);
+        }
         
         onLoginSuccess(data.profile.phone || data.profile.email, selectedRole, data.profile);
       } catch (err: any) {
@@ -444,6 +450,9 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
 
           if (data.token) {
             localStorage.setItem('swiftcart_jwt_token', data.token);
+          }
+          if (data.refreshToken) {
+            localStorage.setItem('swiftcart_refresh_token', data.refreshToken);
           }
           
           onLoginSuccess(data.profile.phone || data.profile.email, selectedRole, data.profile);
@@ -520,6 +529,9 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
 
         if (verifyData.token) {
           localStorage.setItem('swiftcart_jwt_token', verifyData.token);
+        }
+        if (verifyData.refreshToken) {
+          localStorage.setItem('swiftcart_refresh_token', verifyData.refreshToken);
         }
         
         onLoginSuccess(verifyData.profile.phone, selectedRole, verifyData.profile);
@@ -641,6 +653,9 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
 
         if (data.token) {
           localStorage.setItem('swiftcart_jwt_token', data.token);
+        }
+        if (data.refreshToken) {
+          localStorage.setItem('swiftcart_refresh_token', data.refreshToken);
         }
         
         onLoginSuccess(data.profile.phone, selectedRole, data.profile);
@@ -949,6 +964,9 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
                         type="button"
                         onClick={() => {
                           localStorage.setItem('swiftcart_jwt_token', roleObj.token);
+                          if ((roleObj as any).refreshToken) {
+                            localStorage.setItem('swiftcart_refresh_token', (roleObj as any).refreshToken);
+                          }
                           onLoginSuccess(roleObj.profile.phone || roleObj.profile.email, roleObj.role, roleObj.profile);
                         }}
                         className="w-full text-left p-4 rounded-2xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/10 active:bg-emerald-50/20 cursor-pointer transition shadow-3xs flex items-center justify-between"

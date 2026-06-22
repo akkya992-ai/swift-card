@@ -50,23 +50,11 @@ export const getIsCapacitor = (): boolean => {
   return !!(isNativePlatform || isNativeProtocol || isCapacitorUA || isCapacitorAndroidOrigin);
 };
 
-// Self-healing legacy local storage cleanup block to prevent old sandbox routes from sticky cache
-if (typeof window !== 'undefined') {
-  try {
-    const keys = ['swiftcart_api_base_override', 'swiftcart_auto_discovered_backend'];
-    keys.forEach(key => {
-      const val = localStorage.getItem(key);
-      if (val && (val.includes('u4qsdpfkg63jdkgnj3beph') || val.includes('ais-dev-') || val.includes('ais-pre-'))) {
-        console.warn(`[AUTO HEAL] Purging legacy sandbox URL from ${key}: ${val}`);
-        localStorage.removeItem(key);
-      }
-    });
-  } catch (err) {
-    console.error('[AUTO HEAL] Error clearing legacy sandboxes:', err);
-  }
-}
+// Self-healing legacy local storage cleanup block has been bypassed to allow development testing in local APK WebView.
 
 export const CANDIDATE_BACKENDS = [
+  'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app',
+  'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app',
   'https://swift-cart-700512652396.asia-southeast1.run.app'
 ];
 
@@ -129,7 +117,7 @@ export const startBackendAutoDiscovery = () => {
  * - import.meta.env.VITE_API_BASE_URL (highest priority)
  * - localStorage override key: swiftcart_api_base_override
  * - Dynamic auto-discovered working backend URL
- * - fallback to Cloud Run backend URL: https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app
+ * - fallback to Cloud Run backend URL: https://swift-cart-700512652396.asia-southeast1.run.app
  *
  * 3. Remove any logic that forces window.location.origin as API base unless backend is confirmed same-origin.
  */
@@ -195,10 +183,10 @@ export const getApiBase = (): string => {
   }
 
   // 5. Fallback to Cloud Run backend URL
-  // For native platforms we default to our persistent app domain to avoid developer cookie check gates.
+  // For native platforms we default to our persistent workspace app domain to ensure local changes sync instantly.
   const fallbackUrl = getIsCapacitor()
-    ? 'https://swift-cart-700512652396.asia-southeast1.run.app'
-    : (typeof window !== 'undefined' ? window.location.origin : 'https://swift-cart-700512652396.asia-southeast1.run.app');
+    ? 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app'
+    : (typeof window !== 'undefined' ? window.location.origin : 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
   logConfigState(fallbackUrl, 'Default Fallback (Cloud Run backend)');
   return fallbackUrl;
 };
