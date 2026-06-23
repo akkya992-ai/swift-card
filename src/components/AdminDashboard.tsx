@@ -88,8 +88,8 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   
-  // Tab control states: 'analytics' | 'products' | 'orders' | 'customers' | 'coupons' | 'banners' | 'requests' | 'notifications' | 'infographic' | 'backups' | 'tiffins'
-  const [activeTab, setActiveTab] = useState<'analytics' | 'products' | 'orders' | 'customers' | 'coupons' | 'banners' | 'requests' | 'notifications' | 'infographic' | 'backups' | 'tiffins'>('analytics');
+  // Tab control states: 'analytics' | 'products' | 'orders' | 'customers' | 'coupons' | 'banners' | 'requests' | 'notifications' | 'infographic' | 'backups' | 'tiffins' | 'updates'
+  const [activeTab, setActiveTab] = useState<'analytics' | 'products' | 'orders' | 'customers' | 'coupons' | 'banners' | 'requests' | 'notifications' | 'infographic' | 'backups' | 'tiffins' | 'updates'>('analytics');
 
   // Outbound Notification Simulation logs state
   const [outboundNotifications, setOutboundNotifications] = useState<any[]>([]);
@@ -208,6 +208,17 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   const [rawBackupInput, setRawBackupInput] = useState('');
   const [showRestoreConfirm, setShowRestoreConfirm] = useState<string | null>(null);
 
+  // APK Update Management States
+  const [apkLatestVersion, setApkLatestVersion] = useState('1.2.0');
+  const [apkMinSupported, setApkMinSupported] = useState('1.0.0');
+  const [apkForceUpdate, setApkForceUpdate] = useState(false);
+  const [apkDownloadUrl, setApkDownloadUrl] = useState('https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk');
+  const [apkReleaseNotes, setApkReleaseNotes] = useState('Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.');
+  const [apkLoading, setApkLoading] = useState(false);
+  const [apkSuccess, setApkSuccess] = useState(false);
+  const [apkError, setApkError] = useState('');
+  const [simInstalledVersion, setSimInstalledVersion] = useState('1.0.0');
+
   const fetchBackupsList = async () => {
     setBackupsLoading(true);
     try {
@@ -303,6 +314,35 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   useEffect(() => {
     if (activeTab === 'backups') {
       fetchBackupsList();
+    }
+  }, [activeTab]);
+
+  const fetchApkSettingsOnLoad = async () => {
+    setApkLoading(true);
+    setApkError('');
+    setApkSuccess(false);
+    try {
+      const res = await fetch('/api/app-version');
+      if (res.ok) {
+        const data = await res.json();
+        setApkLatestVersion(data.latestVersion || '1.2.0');
+        setApkMinSupported(data.minimumSupportedVersion || '1.0.0');
+        setApkForceUpdate(!!data.forceUpdate);
+        setApkDownloadUrl(data.apkUrl || '');
+        setApkReleaseNotes(data.releaseNotes || '');
+      } else {
+        setApkError('Failed to fetch app settings from the server');
+      }
+    } catch (e: any) {
+      setApkError(`Network error loading application settings: ${e.message}`);
+    } finally {
+      setApkLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'updates') {
+      fetchApkSettingsOnLoad();
     }
   }, [activeTab]);
 
@@ -1276,6 +1316,14 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
           }`}
         >
           <Database className="w-4 h-4" /> Server Backups
+        </button>
+        <button
+          onClick={() => setActiveTab('updates')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'updates' ? 'bg-orange-600 text-white shadow-md' : 'text-slate-500 hover:text-orange-700 bg-orange-500/5'
+          }`}
+        >
+          <Smartphone className="w-4 h-4" /> APK Updates
         </button>
       </div>
 
@@ -2978,6 +3026,301 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* TAB CONTAINER 12: APK UPDATE POLICY & LIVE SIMULATION PLAYGROUND */}
+      {activeTab === 'updates' && (
+        <div className="space-y-6 text-left animate-fade-in">
+          
+          {/* Header Card */}
+          <div className="bg-slate-900 text-white rounded-[32px] p-6 border border-slate-800 shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-1">
+              <span className="bg-orange-500/20 text-orange-400 text-[10px] font-black uppercase px-2.5 py-1 rounded-full tracking-wider border border-orange-500/20 inline-flex items-center gap-1">
+                <Smartphone className="w-3.5 h-3.5" />
+                Production APK Release Channel
+              </span>
+              <h3 className="text-lg font-black tracking-tight mt-1">Daily Mart APK Update Management Center</h3>
+              <p className="text-xs text-slate-400 max-w-2xl font-medium">
+                Configure release versions, force crucial security upgrades, and direct users to correct APK downloads. Syncs with PostgreSQL server and local memory storage channels automatically.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            {/* Left Side: Policy Management Settings Form */}
+            <div className="lg:col-span-7 space-y-6">
+              <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-xs space-y-6">
+                <div className="border-b pb-4 flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-950 flex items-center gap-2">
+                      <Smartphone className="w-4 h-4 text-orange-600" />
+                      Global Version parameters
+                    </h4>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Control live upgrade dialogs across customer, seller, and rider application nodes.</p>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={fetchApkSettingsOnLoad}
+                    className="p-1.5 border border-slate-100 hover:bg-slate-50 rounded-xl transition text-slate-500 cursor-pointer"
+                    title="Reload from backend"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${apkLoading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+
+                <form 
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    setApkLoading(true);
+                    setApkError('');
+                    setApkSuccess(false);
+
+                    try {
+                      const res = await fetch('/api/app-version', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          latestVersion: apkLatestVersion.trim(),
+                          minimumSupportedVersion: apkMinSupported.trim(),
+                          forceUpdate: apkForceUpdate,
+                          apkUrl: apkDownloadUrl.trim(),
+                          releaseNotes: apkReleaseNotes.trim(),
+                        }),
+                      });
+
+                      if (res.ok) {
+                        setApkSuccess(true);
+                      } else {
+                        const data = await res.json();
+                        setApkError(data.error || 'Failed to update APK settings');
+                      }
+                    } catch (err: any) {
+                      setApkError(`Network error while writing update policy: ${err.message}`);
+                    } finally {
+                      setApkLoading(false);
+                    }
+                  }} 
+                  className="space-y-4 text-xs"
+                >
+                  {apkSuccess && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-850 font-extrabold rounded-2xl flex items-center gap-2 animate-fade-in">
+                      <span>🎉 Settings written and applied successfully to PostgreSQL datastore!</span>
+                    </div>
+                  )}
+
+                  {apkError && (
+                    <div className="p-3 bg-rose-50 border border-rose-100 text-rose-850 font-extrabold rounded-2xl animate-fade-in">
+                      <span>⚠️ {apkError}</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Latest version */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-455 block pl-0.5">Latest Released version</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 1.2.0"
+                        value={apkLatestVersion}
+                        onChange={(e) => setApkLatestVersion(e.target.value)}
+                        className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold focus:outline-none"
+                        required
+                      />
+                    </div>
+
+                    {/* Minimum supported version */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-455 block pl-0.5">Minimum Supported version</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 1.0.0"
+                        value={apkMinSupported}
+                        onChange={(e) => setApkMinSupported(e.target.value)}
+                        className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold focus:outline-none"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Force update toggle */}
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                    <div className="space-y-0.5 text-left">
+                      <span className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wide block">Force crucial Upgrade Toggle</span>
+                      <p className="text-[9.5px] text-slate-400">Lock users below the minimum version out of the system entirely.</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={apkForceUpdate}
+                        onChange={(e) => setApkForceUpdate(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-350 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
+
+                  {/* APK Link download */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-455 block pl-0.5">APK Download URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={apkDownloadUrl}
+                      onChange={(e) => setApkDownloadUrl(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl font-semibold font-mono text-[11px] focus:outline-none"
+                      required
+                    />
+                  </div>
+
+                  {/* Release Notes */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-455 block pl-0.5">Release Notes &amp; Highlights</label>
+                    <textarea
+                      placeholder="What is new in this update..."
+                      value={apkReleaseNotes}
+                      onChange={(e) => setApkReleaseNotes(e.target.value)}
+                      className="w-full h-24 bg-slate-50 border border-slate-100 rounded-xl p-3 font-semibold focus:outline-none placeholder-slate-400"
+                      required
+                    />
+                  </div>
+
+                  {/* Submit Button */}
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={apkLoading}
+                      className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl font-extrabold cursor-pointer transition flex items-center gap-2 shadow-md uppercase text-xs"
+                    >
+                      {apkLoading ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          Publishing Policy...
+                        </>
+                      ) : (
+                        'Save & Deploy Version Policy'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {/* Right Side: Interactive Version Simulation & Integrity Checker */}
+            <div className="lg:col-span-5 space-y-6">
+              <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-xs space-y-4">
+                <div>
+                  <h4 className="text-sm font-black text-slate-950 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-orange-500 animate-pulse" />
+                    Live Simulation Sandbox
+                  </h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Verify semver rule outputs immediately and ensure perfect layout rendering before real client deployments.
+                  </p>
+                </div>
+
+                <div className="space-y-4 pt-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-455 block pl-0.5">Simulated Client App Version</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. 1.0.0"
+                        value={simInstalledVersion}
+                        onChange={(e) => setSimInstalledVersion(e.target.value)}
+                        className="flex-1 p-3 bg-slate-50 border border-slate-100 rounded-xl font-bold focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Simulation output calculations */}
+                  {(() => {
+                    const parse = (v: string) => v.split('.').map(n => parseInt(n, 10) || 0);
+                    const compareVersions = (v1: string, v2: string) => {
+                      const p1 = parse(v1);
+                      const p2 = parse(v2);
+                      for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+                        const val1 = p1[i] || 0;
+                        const val2 = p2[i] || 0;
+                        if (val1 > val2) return 1;
+                        if (val1 < val2) return -1;
+                      }
+                      return 0;
+                    };
+
+                    const isNewer = compareVersions(apkLatestVersion, simInstalledVersion) > 0;
+                    const isBelowMinimum = compareVersions(simInstalledVersion, apkMinSupported) < 0;
+                    const mustForceUpdate = isNewer && (apkForceUpdate || isBelowMinimum);
+
+                    let resultType = "UP_TO_DATE";
+                    if (isNewer && mustForceUpdate) {
+                      resultType = "FORCE_UPDATE";
+                    } else if (isNewer) {
+                      resultType = "OPTIONAL_UPDATE";
+                    }
+
+                    return (
+                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3 font-sans text-xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Simulator Assessment</span>
+                        
+                        {resultType === "UP_TO_DATE" && (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-emerald-800 font-extrabold">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+                              Client Up To Date
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-normal font-medium leading-relaxed">
+                              Because simulated version ({simInstalledVersion}) is greater than or equal to current latest ({apkLatestVersion}), the client experiences clean, immediate entry. No version alerts trigger.
+                            </p>
+                          </div>
+                        )}
+
+                        {resultType === "OPTIONAL_UPDATE" && (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-amber-800 font-extrabold font-sans">
+                              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block animate-ping" />
+                              Optional Update Dialog Triggers
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-normal font-medium leading-relaxed">
+                              Simulated client version ({simInstalledVersion}) is older than server latest ({apkLatestVersion}), but above critical minimum ({apkMinSupported}). Client sees an update popup with a <b>"Later"</b> choice to defer.
+                            </p>
+                          </div>
+                        )}
+
+                        {resultType === "FORCE_UPDATE" && (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-rose-800 font-extrabold font-sans">
+                              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block animate-pulse" />
+                              CRITICAL FORCE UPDATE LOCK TRIGGERED
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-normal font-medium leading-relaxed">
+                              Client version ({simInstalledVersion}) is older than the latest ({apkLatestVersion}) AND either the global force policy is enabled OR client version lies below minimum supported ({apkMinSupported}). <b>The app is locked completely. The dismiss button is removed.</b>
+                            </p>
+                          </div>
+                        )}
+                        
+                        <div className="pt-2.5 border-t border-slate-200 flex flex-col gap-1.5 text-[9px] text-slate-400 font-medium leading-snug">
+                          <div className="flex justify-between">
+                            <span>Older APK detects newer APK:</span>
+                            <span className="font-bold text-slate-600">{isNewer ? 'YES' : 'NO'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Below Minimum version:</span>
+                            <span className="font-bold text-slate-650">{isBelowMinimum ? 'YES' : 'NO'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Force Policy Active:</span>
+                            <span className="font-bold text-slate-650">{apkForceUpdate ? 'YES' : 'NO'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

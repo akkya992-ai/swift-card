@@ -200,5 +200,13 @@ export interface TiffinItem {
   createdAt?: string;
 }
 
+export interface AppSettings {
+  latestVersion: string;
+  minimumSupportedVersion: string;
+  forceUpdate: boolean;
+  apkUrl: string;
+  releaseNotes: string;
+}
+
 
 

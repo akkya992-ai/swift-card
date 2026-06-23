@@ -1023,6 +1023,16 @@ interface DatabaseSchema {
   tiffinItems?: any[];
   refreshTokens?: RefreshTokenRecord[];
   customerNotifications?: any[];
+  appSettings?: AppSettingsRecord;
+}
+
+export interface AppSettingsRecord {
+  id: string;
+  latestVersion: string;
+  minimumSupportedVersion: string;
+  forceUpdate: boolean;
+  apkUrl: string;
+  releaseNotes: string;
 }
 
 const DEFAULT_CATEGORIES: Category[] = [
@@ -1610,6 +1620,15 @@ const DEFAULT_BANNERS: Banner[] = [
   { id: 'b2', title: 'CHILL DRINKS & SIZZLING SNACKS AT 50% OFF', subtitle: 'Beat the weather with instant chilled beverages from our darkstore hubs.', imageUrl: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&q=80&w=600', categoryLink: 'drinks', discountBadge: 'Double Deal', isActive: true }
 ];
 
+const DEFAULT_APP_SETTINGS: AppSettingsRecord = {
+  id: 'default',
+  latestVersion: '1.2.0',
+  minimumSupportedVersion: '1.0.0',
+  forceUpdate: false,
+  apkUrl: 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk',
+  releaseNotes: 'Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.'
+};
+
 // Helper to deterministically map any string ID to a valid UUID format
 function toUUID(str: string): string {
   if (!str) return crypto.randomUUID();
@@ -1809,6 +1828,28 @@ async function syncWithSupabaseOnStartup(): Promise<DatabaseSchema> {
           CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
           CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
         `);
+
+        // Create app_settings table
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS app_settings (
+            id VARCHAR(50) PRIMARY KEY DEFAULT 'default',
+            latest_version VARCHAR(50) NOT NULL DEFAULT '1.2.0',
+            minimum_supported_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+            force_update BOOLEAN NOT NULL DEFAULT FALSE,
+            apk_download_url TEXT NOT NULL DEFAULT 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk',
+            release_notes TEXT NOT NULL DEFAULT 'Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.',
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+          );
+        `);
+
+        // Seed app_settings if empty
+        const { rows: settingsRows } = await client.query(`SELECT COUNT(*) as count FROM app_settings`);
+        if (parseInt(settingsRows[0].count) === 0) {
+          await client.query(`
+            INSERT INTO app_settings (id, latest_version, minimum_supported_version, force_update, apk_download_url, release_notes)
+            VALUES ('default', '1.2.0', '1.0.0', FALSE, 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk', 'Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.')
+          `);
+        }
 
         // Create Restaurant Marketplace tables
         await client.query(`
@@ -2340,6 +2381,7 @@ function loadDatabase(): DatabaseSchema {
         roleRequests: parsed.roleRequests || [],
         outboundNotifications: parsed.outboundNotifications || [],
         refreshTokens: parsed.refreshTokens || [],
+        appSettings: parsed.appSettings || DEFAULT_APP_SETTINGS,
         restaurantCategories: parsed.restaurantCategories || [
           { id: 'rc_1', name: '[Category Slot A]', image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=120' },
           { id: 'rc_2', name: '[Category Slot B]', image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=120' }
@@ -3136,6 +3178,93 @@ saveDatabase(db); // Save to file initially
 // 1. Health & Status
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
+// App Version Settings API for production-grade APK update management
+app.get('/api/app-version', async (req, res) => {
+  if (pgPool) {
+    try {
+      const { rows } = await pgPool.query('SELECT * FROM app_settings WHERE id = $1', ['default']);
+      if (rows.length > 0) {
+        const s = rows[0];
+        const settings = {
+          latestVersion: s.latest_version,
+          minimumSupportedVersion: s.minimum_supported_version,
+          forceUpdate: s.force_update,
+          apkUrl: s.apk_download_url,
+          releaseNotes: s.release_notes
+        };
+        // sync to db local fallback
+        db.appSettings = {
+          id: 'default',
+          ...settings
+        };
+        saveDatabase(db);
+        return res.json(settings);
+      }
+    } catch (err: any) {
+      console.error('[DATABASE] Error reading app_settings from Postgres:', err.message || err);
+    }
+  }
+
+  // Fallback to local
+  const s = db.appSettings || DEFAULT_APP_SETTINGS;
+  return res.json({
+    latestVersion: s.latestVersion,
+    minimumSupportedVersion: s.minimumSupportedVersion,
+    forceUpdate: s.forceUpdate,
+    apkUrl: s.apkUrl,
+    releaseNotes: s.releaseNotes
+  });
+});
+
+app.post('/api/app-version', async (req, res) => {
+  const { latestVersion, minimumSupportedVersion, forceUpdate, apkUrl, releaseNotes } = req.body;
+
+  if (!latestVersion || !minimumSupportedVersion || !apkUrl || !releaseNotes) {
+    return res.status(400).json({ error: 'All fields (latestVersion, minimumSupportedVersion, forceUpdate, apkUrl, releaseNotes) are required.' });
+  }
+
+  const updatedLocal = {
+    id: 'default',
+    latestVersion,
+    minimumSupportedVersion,
+    forceUpdate: !!forceUpdate,
+    apkUrl,
+    releaseNotes
+  };
+
+  if (pgPool) {
+    try {
+      await pgPool.query(`
+        INSERT INTO app_settings (id, latest_version, minimum_supported_version, force_update, apk_download_url, release_notes)
+        VALUES ('default', $1, $2, $3, $4, $5)
+        ON CONFLICT (id) DO UPDATE SET
+          latest_version = EXCLUDED.latest_version,
+          minimum_supported_version = EXCLUDED.minimum_supported_version,
+          force_update = EXCLUDED.force_update,
+          apk_download_url = EXCLUDED.apk_download_url,
+          release_notes = EXCLUDED.release_notes,
+          updated_at = CURRENT_TIMESTAMP
+      `, [latestVersion, minimumSupportedVersion, !!forceUpdate, apkUrl, releaseNotes]);
+    } catch (err: any) {
+      console.error('[DATABASE] Error updating app_settings in Postgres:', err.message || err);
+    }
+  }
+
+  db.appSettings = updatedLocal;
+  saveDatabase(db);
+
+  return res.json({
+    success: true,
+    settings: {
+      latestVersion,
+      minimumSupportedVersion,
+      forceUpdate: !!forceUpdate,
+      apkUrl,
+      releaseNotes
+    }
+  });
 });
 
 // 2. Auth OTP Handlers
