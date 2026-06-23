@@ -412,19 +412,9 @@ export default function App() {
           }
         }
 
-        let base = '';
-        if (typeof window !== 'undefined') {
-          const savedOverride = localStorage.getItem('swiftcart_api_base_override');
-          if (isCap) {
-            base = savedOverride || '';
-          } else {
-            base = window.location.origin;
-          }
-          console.log('API BASE', base);
-          console.log('IS CAPACITOR', isCap);
-        }
+        const base = getApiBase();
         
-        const versionApiUrl = `${base.replace(/\/+$/, '')}/api/app-version`;
+        const versionApiUrl = base ? `${base.replace(/\/+$/, '')}/api/app-version` : '/api/app-version';
         console.log('[AutoUpdater] DETECTED CLIENT APP VERSION:', currentAppVersion);
         console.log('[AutoUpdater] TARGET_URL_FETCH:', versionApiUrl);
         console.log('[AutoUpdater] Checking version from:', versionApiUrl);

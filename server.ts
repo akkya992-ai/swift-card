@@ -62,28 +62,6 @@ app.get('/icon.jpg', (req, res) => {
 app.get('/splash.jpg', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'src/assets/images/blinkstore_splash_screen_1781438473720.jpg'));
 });
-app.get('/version.json', (req, res) => {
-  const host = req.get('host') || 'swift-cart-700512652396.asia-southeast1.run.app';
-  const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-  
-  let latestVersion = '1.0.1';
-  try {
-    const filePath = path.join(process.cwd(), 'public/version.json');
-    if (fs.existsSync(filePath)) {
-      const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      if (content && content.latestVersion) {
-        latestVersion = content.latestVersion;
-      }
-    }
-  } catch (err) {
-    console.warn('[VERSION READ ERROR]', err);
-  }
-
-  res.json({
-    latestVersion,
-    apkUrl: `${protocol}://${host}/assets/app-release.apk`
-  });
-});
 
 // Mahabubabad, Telangana Dark Stores Coordinate Map
 const DelhiStores: Record<string, { name: string; lat: number; lng: number }> = {
@@ -3215,6 +3193,52 @@ app.get('/api/app-version', async (req, res) => {
     forceUpdate: s.forceUpdate,
     apkUrl: s.apkUrl,
     releaseNotes: s.releaseNotes
+  });
+});
+
+app.get('/version.json', async (req, res) => {
+  let settings = {
+    latestVersion: '1.0.1',
+    minimumSupportedVersion: '1.0.0',
+    forceUpdate: false,
+    apkUrl: 'https://swift-cart-700512652396.asia-southeast1.run.app/assets/app-release.apk',
+    releaseNotes: 'Daily Mart updates and optimization improvements.'
+  };
+
+  if (pgPool) {
+    try {
+      const { rows } = await pgPool.query('SELECT * FROM app_settings WHERE id = $1', ['default']);
+      if (rows.length > 0) {
+        const s = rows[0];
+        settings = {
+          latestVersion: s.latest_version,
+          minimumSupportedVersion: s.minimum_supported_version,
+          forceUpdate: s.force_update,
+          apkUrl: s.apk_download_url,
+          releaseNotes: s.release_notes
+        };
+      }
+    } catch (err: any) {
+      console.error('[DATABASE] Error reading app_settings in /version.json:', err.message || err);
+    }
+  } else {
+    const s = db.appSettings || DEFAULT_APP_SETTINGS;
+    settings = {
+      latestVersion: s.latestVersion,
+      minimumSupportedVersion: s.minimumSupportedVersion,
+      forceUpdate: s.forceUpdate,
+      apkUrl: s.apkUrl,
+      releaseNotes: s.releaseNotes
+    };
+  }
+
+  const sOpt = db.appSettings || DEFAULT_APP_SETTINGS;
+  res.json({
+    latestVersion: settings.latestVersion || sOpt.latestVersion || '1.0.1',
+    minimumSupportedVersion: settings.minimumSupportedVersion || sOpt.minimumSupportedVersion || '1.0.0',
+    forceUpdate: settings.forceUpdate ?? sOpt.forceUpdate ?? false,
+    apkUrl: settings.apkUrl || sOpt.apkUrl || 'https://swift-cart-700512652396.asia-southeast1.run.app/assets/app-release.apk',
+    releaseNotes: settings.releaseNotes || sOpt.releaseNotes || 'Updates and critical fixes.'
   });
 });
 
