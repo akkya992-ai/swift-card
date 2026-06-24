@@ -61,6 +61,7 @@ import WishlistPage from './WishlistPage';
 import RestaurantInfographic from './RestaurantInfographic';
 import RestaurantCustomerFlow from './RestaurantCustomerFlow';
 import TiffinCustomerFlow from './TiffinCustomerFlow';
+import { playOrderPlacedSound, playNotificationPopSound } from '../audioUtils';
 import { supabase, isSupabaseConfigured } from '../supabase';
 // @ts-ignore
 import dailyMartLogo from '../assets/images/daily_mart_green_logo_1781598237470.jpg';
@@ -473,6 +474,8 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                 // Play sound notification if enabled
                 if (notifSound) {
                   try {
+                    // Guaranteed offline-ready synthesizer fallback
+                    playNotificationPopSound();
                     const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-500.wav');
                     audio.volume = 0.25;
                     audio.play().catch(() => {});
@@ -1168,6 +1171,9 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
         throw new Error(data.error || 'Server rejected checkout process.');
       }
 
+      // Play 100% offline-ready success chime sound
+      playOrderPlacedSound();
+
       setCart([]);
       setIsCartOpen(false);
       
@@ -1253,13 +1259,13 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
     return (
       <div
         key={p.id}
-        className={`bg-white rounded-[24px] border border-slate-100 hover:border-emerald-500/10 shadow-[0_4px_20px_rgba(0,0,0,0.015)] hover:shadow-[0_8px_30px_rgba(16,185,129,0.08)] hover:-translate-y-1 transition-all duration-300 p-3.5 flex flex-col justify-between relative group text-left ${
-          isCarousel ? 'shrink-0 w-36 xs:w-40 sm:w-44 md:w-48' : 'w-full'
+        className={`bg-white rounded-[28px] border border-slate-100 hover:border-emerald-500/10 shadow-[0_4px_24px_rgba(0,0,0,0.015)] hover:shadow-[0_12px_36px_rgba(16,185,129,0.08)] hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col justify-between relative group text-left ${
+          isCarousel ? 'shrink-0 w-40 xs:w-44 sm:w-48 md:w-52' : 'w-full'
         }`}
       >
         {/* Delivery Time sticker */}
-        <div className="absolute top-2.5 left-2.5 bg-emerald-50 text-emerald-850 text-[8px] font-black px-2 py-1 rounded-lg flex items-center gap-1 z-10 shadow-xs border border-emerald-100/50 leading-none">
-          <Clock className="w-2.5 h-2.5 text-emerald-600 animate-pulse-subtle" />
+        <div className="absolute top-3 left-3 bg-emerald-50 text-emerald-850 text-[9px] font-black px-2.5 py-1 rounded-xl flex items-center gap-1 z-10 shadow-xs border border-emerald-100/50 leading-none">
+          <Clock className="w-3 h-3 text-emerald-600 animate-pulse-subtle" />
           <span>{p.deliveryMinutes} MINS</span>
         </div>
 
@@ -1267,14 +1273,14 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
         <button
           type="button"
           onClick={(e) => handleToggleWishlist(p.id, e)}
-          className="absolute top-2.5 right-2.5 p-1.5 bg-white/95 hover:bg-white rounded-full text-slate-400 hover:text-rose-500 z-10 shadow-xs border border-slate-100 cursor-pointer transition duration-200"
+          className="absolute top-3 right-3 p-2 bg-white/95 hover:bg-white rounded-full text-slate-400 hover:text-rose-500 z-10 shadow-xs border border-slate-100 cursor-pointer transition duration-200"
         >
-          <Heart className={`w-3.5 h-3.5 ${isLiked ? 'text-rose-500 fill-rose-500' : 'text-slate-400'}`} />
+          <Heart className={`w-4 h-4 ${isLiked ? 'text-rose-500 fill-rose-500' : 'text-slate-400'}`} />
         </button>
 
         {/* Product illustration image block */}
         <div
-          className="w-full aspect-square rounded-2xl overflow-hidden bg-slate-50/55 flex items-center justify-center p-2.5 mt-5 relative cursor-pointer"
+          className="w-full aspect-square rounded-2xl overflow-hidden bg-slate-50/55 flex items-center justify-center p-3 mt-6 relative cursor-pointer"
           onClick={() => { setSelectedProductDetails(p); setActiveTab('product-details'); }}
         >
           <img
@@ -1284,29 +1290,29 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
             className="w-full h-full object-contain mix-blend-multiply group-hover:scale-104 transition-transform duration-300"
           />
           {hasDiscount && (
-            <div className="absolute bottom-2 left-2 bg-rose-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-md shadow-xs leading-none">
+            <div className="absolute bottom-2.5 left-2.5 bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded-lg shadow-xs leading-none">
               SAVE {Math.round(((p.originalPrice! - p.price) / p.originalPrice!) * 100)}%
             </div>
           )}
         </div>
 
         {/* Text descriptions */}
-        <div className="mt-3 flex-1 flex flex-col justify-between">
+        <div className="mt-4 flex-1 flex flex-col justify-between">
           <div>
-            <span className="text-[8px] text-slate-400 font-extrabold uppercase tracking-widest block">{p.sellerName}</span>
+            <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest block">{p.sellerName}</span>
             <h4
-              className="font-sans font-extrabold text-xs text-slate-800 line-clamp-2 leading-snug group-hover:text-emerald-600 cursor-pointer text-left mt-0.5 min-h-[32px]"
+              className="font-sans font-extrabold text-xs text-slate-800 line-clamp-2 leading-snug group-hover:text-emerald-600 cursor-pointer text-left mt-1 min-h-[36px]"
               onClick={() => { setSelectedProductDetails(p); setActiveTab('product-details'); }}
             >
               {p.name}
             </h4>
             
             {p.variants && p.variants.length > 0 ? (
-              <div className="mt-1.5 text-left">
+              <div className="mt-2 text-left">
                 <select
                   value={currentVariant}
                   onChange={(e) => setSelectedVariants({ ...selectedVariants, [p.id]: e.target.value })}
-                  className="w-full text-[9px] font-bold border border-slate-200 bg-slate-50 text-slate-705 text-slate-700 px-1.5 py-1 rounded-md focus:outline-none cursor-pointer"
+                  className="w-full text-[10px] font-black border border-slate-200 bg-slate-50 text-slate-705 text-slate-700 px-2.5 py-1.5 rounded-lg focus:outline-none cursor-pointer"
                 >
                   {p.variants.map((v, vidx) => (
                     <option key={vidx} value={v}>{v}</option>
@@ -1314,49 +1320,59 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                 </select>
               </div>
             ) : (
-              <span className="text-[9px] bg-slate-50 border border-slate-100 text-slate-505 text-slate-500 font-bold px-1.5 py-0.5 rounded-md mt-1 inline-block truncate max-w-full font-mono">
+              <span className="text-[10px] bg-slate-50 border border-slate-100 text-slate-505 text-slate-500 font-bold px-2.5 py-1 rounded-lg mt-2 inline-block truncate max-w-full font-mono">
                 {p.unit}
               </span>
             )}
           </div>
 
           {/* Action prices and Add counter */}
-          <div className="mt-3.5 pt-2 border-t border-slate-105 border-slate-100 flex items-center justify-between">
-            <div className="text-left font-sans">
-              <span className="font-extrabold text-xs text-slate-900 font-mono block leading-none">₹{p.price}</span>
-              {hasDiscount && (
-                <span className="text-[9px] text-slate-405 text-slate-400 font-bold line-through font-mono mt-0.5 block leading-none">₹{p.originalPrice}</span>
-              )}
+          <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-3">
+            <div className="flex items-baseline justify-between">
+              <div className="flex items-baseline gap-1.5 text-left font-sans">
+                <span className="font-black text-sm text-slate-900 font-mono">₹{p.price}</span>
+                {hasDiscount && (
+                  <span className="text-[10px] text-slate-400 font-bold line-through font-mono">₹{p.originalPrice}</span>
+                )}
+              </div>
+              <span className="text-[9.5px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg uppercase tracking-wider">
+                {p.stock > 0 ? `${p.stock} Left` : 'Out of Stock'}
+              </span>
             </div>
 
             {p.stock === 0 ? (
-              <span className="text-[9px] font-black uppercase text-rose-500 bg-rose-50 border border-rose-100 px-2 py-1 rounded-xl">Out</span>
+              <div className="w-full h-12 rounded-xl bg-slate-100 border border-slate-200 text-slate-400 text-xs font-extrabold flex items-center justify-center uppercase tracking-wider select-none">
+                Sold Out
+              </div>
             ) : quantity > 0 ? (
-              <div className="flex items-center justify-between border border-emerald-500 bg-emerald-50 text-emerald-700 rounded-xl w-16 h-7.5 overflow-hidden">
+              <div className="flex items-center justify-between border-2 border-emerald-500 bg-emerald-50 text-emerald-700 rounded-xl w-full h-12 overflow-hidden shadow-xs">
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); handleRemoveFromCart(p.id, currentVariant); }}
-                  className="w-5 h-full flex items-center justify-center hover:bg-emerald-100 transition duration-150 text-emerald-700 font-extrabold cursor-pointer"
+                  className="w-12 h-full flex items-center justify-center hover:bg-emerald-100 active:scale-95 transition-all text-emerald-700 font-black text-base cursor-pointer"
+                  title="Decrease item quantity"
                 >
-                  <Minus className="w-2.5 h-2.5 stroke-[3]" />
+                  <Minus className="w-4 h-4 stroke-[3]" />
                 </button>
-                <span className="font-black text-xs font-sans select-none">{quantity}</span>
+                <span className="font-black text-sm font-sans select-none">{quantity}</span>
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); handleAddToCart(p, currentVariant); }}
-                  className="w-5 h-full flex items-center justify-center hover:bg-emerald-100 transition duration-150 text-emerald-700 font-extrabold cursor-pointer"
+                  className="w-12 h-full flex items-center justify-center hover:bg-emerald-100 active:scale-95 transition-all text-emerald-700 font-black text-base cursor-pointer"
                   disabled={quantity >= p.stock}
+                  title="Increase item quantity"
                 >
-                  <Plus className="w-2.5 h-2.5 stroke-[3]" />
+                  <Plus className="w-4 h-4 stroke-[3]" />
                 </button>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); handleAddToCart(p, currentVariant); }}
-                className="border border-emerald-500 bg-white hover:bg-emerald-50 text-emerald-600 hover:text-emerald-750 text-[10px] font-black px-4 py-1.5 rounded-xl transition duration-150 active:scale-95 cursor-pointer shadow-xs leading-none uppercase font-sans h-7.5 flex items-center justify-center"
+                className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl transition-all duration-150 active:scale-95 cursor-pointer shadow-md hover:shadow-emerald-500/20 flex items-center justify-center gap-1.5 uppercase tracking-wider border border-emerald-500/35"
               >
-                ADD
+                <span>Add to Cart</span>
+                <Plus className="w-3.5 h-3.5 stroke-[3]" />
               </button>
             )}
           </div>
@@ -1398,17 +1414,17 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
       </div>
 
       {/* DESKTOP HEADER & GLOBAL MOBILE NAV CONTROLLER */}
-      <div className="bg-emerald-600 text-white sticky top-0 z-40 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 py-3 md:py-4">
+      <div className="bg-emerald-600 text-white sticky top-0 z-40 shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 py-5 md:py-7">
           
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-4 md:gap-6">
             
             {/* Logo name branding (keeping simple & direct context) */}
             <div 
               onClick={handleLogoClick}
-              className="hidden md:flex items-center gap-2 cursor-pointer select-none"
+              className="hidden md:flex items-center gap-2.5 cursor-pointer select-none"
             >
-              <div className="w-7 h-7 rounded-lg overflow-hidden border border-emerald-500 bg-white">
+              <div className="w-8 h-8 rounded-xl overflow-hidden border border-emerald-500 bg-white shadow-sm">
                 <img 
                   src={dailyMartLogo} 
                   alt="Daily Mart logo" 
@@ -1416,22 +1432,24 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                   referrerPolicy="no-referrer"
                 />
               </div>
-              <span className="font-black text-sm tracking-tighter uppercase font-sans">Daily Mart 10-MIN</span>
+              <span className="font-black text-base tracking-tighter uppercase font-sans">Daily Mart 10-MIN</span>
             </div>
 
             {/* Delivery pinpoint selector indicator */}
-            <div className="flex items-center gap-2 max-w-[65%] text-left">
-              <div className="flex items-center justify-center shrink-0">
-                <MapPin className={`w-5 h-5 text-white shrink-0 animate-bounce ${deliveryAddress === 'Add Address' ? 'location-not-set' : ''}`} />
+            <div className="flex items-center gap-3 max-w-[65%] text-left py-1">
+              <div className="flex items-center justify-center shrink-0 p-1.5 bg-emerald-700/40 rounded-xl">
+                <MapPin className={`w-5.5 h-5.5 text-yellow-300 shrink-0 animate-bounce ${deliveryAddress === 'Add Address' ? 'location-not-set' : ''}`} />
               </div>
               <div 
-                className="cursor-pointer"
+                className="cursor-pointer space-y-0.5"
                 onClick={() => setActiveTab('addresses')}
                 title="Manage locations"
               >
-                <div className="flex items-center gap-1.5 text-[9px] font-black text-emerald-100 uppercase tracking-widest">
-                  <span>Delivering to {savedAddresses.find(a=>a.id===activeAddressId)?.label.split(' ')[0] || 'Home'}</span>
-                  <span className="bg-emerald-500 text-white rounded text-[8px] px-1 font-extrabold">Instant</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-white bg-emerald-700/60 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                    Delivering to {savedAddresses.find(a=>a.id===activeAddressId)?.label.toUpperCase() || 'HOME'}
+                  </span>
+                  <span className="bg-yellow-400 text-emerald-950 rounded-sm text-[8px] px-1.5 py-0.5 font-black uppercase tracking-wider shadow-xs">Instant 10m</span>
                 </div>
                 <p 
                   id="customer-address-text"
@@ -1439,7 +1457,11 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                     e.stopPropagation();
                     setActiveTab('addresses');
                   }}
-                  className="text-xs text-white font-semibold truncate max-w-xs md:max-w-md border-b border-dashed border-white/40 hover:border-white leading-none mt-0.5 cursor-pointer hover:text-emerald-100 transition-colors"
+                  className={`text-sm font-black truncate max-w-xs md:max-w-md border-b-2 border-dashed leading-normal cursor-pointer hover:text-yellow-100 transition-colors ${
+                    deliveryAddress === 'Add Address' 
+                      ? 'text-yellow-300 border-yellow-300/60 hover:border-yellow-300' 
+                      : 'text-white border-white/40 hover:border-white'
+                  }`}
                 >
                   {deliveryAddress}
                 </p>
@@ -1453,7 +1475,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                     setDeliveryAddress('Add Address');
                     setActiveAddressId(null);
                   }}
-                  className="p-1 hover:bg-rose-600/30 hover:text-red-300 rounded-full transition-all shrink-0 text-white/70 flex items-center justify-center cursor-pointer"
+                  className="p-1.5 bg-emerald-700/30 hover:bg-rose-600/30 hover:text-red-300 rounded-full transition-all shrink-0 text-white/70 flex items-center justify-center cursor-pointer ml-1"
                   title="Clear delivery location"
                 >
                   <X className="w-4 h-4" />
@@ -1462,7 +1484,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
             </div>
 
             {/* Header controls drawer / search / cart buttons */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2.5 shrink-0">
               {/* My Orders Desktop Menu */}
               <button
                 type="button"
@@ -1508,14 +1530,14 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
               {/* Wishlist Link Indicator */}
               <button
                 onClick={() => setActiveTab('wishlist')}
-                className={`p-2 rounded-xl transition cursor-pointer relative ${
-                  activeTab === 'wishlist' ? 'bg-emerald-700 text-white' : 'hover:bg-emerald-500'
+                className={`p-2.5 rounded-xl transition cursor-pointer relative ${
+                  activeTab === 'wishlist' ? 'bg-emerald-700 text-white shadow-inner' : 'hover:bg-emerald-500'
                 }`}
                 title="My Saved Wishlist"
               >
-                <Heart className="w-4.5 h-4.5 text-white fill-current" />
+                <Heart className="w-5 h-5 text-white fill-current" />
                 {wishlist.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-rose-600 text-white rounded-full w-4 h-4 flex items-center justify-center font-black text-[9px]">
+                  <span className="absolute -top-1 -right-1 bg-rose-600 text-white rounded-full w-4.5 h-4.5 flex items-center justify-center font-black text-[9.5px]">
                     {wishlist.length}
                   </span>
                 )}
@@ -1528,43 +1550,41 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                   setShowNotificationCenter(true);
                   fetchCustomerNotifications();
                 }}
-                className={`p-2 rounded-xl transition cursor-pointer relative ${
-                  showNotificationCenter ? 'bg-emerald-700 text-white' : 'hover:bg-emerald-500 hover:text-yellow-105'
+                className={`p-2.5 rounded-xl transition cursor-pointer relative ${
+                  showNotificationCenter ? 'bg-emerald-700 text-white shadow-inner' : 'hover:bg-emerald-500 hover:text-yellow-105'
                 }`}
                 title="Open Notification Inbox"
               >
-                <Bell className="w-4.5 h-4.5 text-white" />
+                <Bell className="w-5 h-5 text-white" />
                 {customerNotifications.some(n => !n.isRead) && (
-                  <span className="absolute -top-1 -right-1 bg-yellow-400 text-slate-900 border border-emerald-800 rounded-full w-4 h-4 flex items-center justify-center font-black text-[9px] animate-bounce">
+                  <span className="absolute -top-1 -right-1 bg-yellow-400 text-slate-900 border border-emerald-800 rounded-full w-4.5 h-4.5 flex items-center justify-center font-black text-[9.5px] animate-bounce">
                     {customerNotifications.filter(n => !n.isRead).length}
                   </span>
                 )}
               </button>
 
-
-
               {/* Scan on Mobile QR option */}
               <button
                 onClick={() => setShowMobileQrModal(true)}
-                className="p-2 rounded-xl bg-emerald-700/50 hover:bg-emerald-700/80 hover:text-yellow-300 transition relative cursor-pointer flex items-center gap-1 text-xs font-black uppercase text-white border border-emerald-500/25"
+                className="p-2.5 rounded-xl bg-emerald-700/50 hover:bg-emerald-700/80 hover:text-yellow-300 transition relative cursor-pointer flex items-center gap-1.5 text-xs font-black uppercase text-white border border-emerald-500/25"
                 title="Open link on other phone / QR Code"
               >
-                <QrCode className="w-4.5 h-4.5 text-yellow-300 animate-pulse-subtle" />
-                <span className="hidden lg:inline text-[9px] tracking-wider">Open on Phone</span>
+                <QrCode className="w-5 h-5 text-yellow-300 animate-pulse-subtle" />
+                <span className="hidden lg:inline text-[9.5px] tracking-wider">Open on Phone</span>
               </button>
 
               {/* Cart Button */}
               <button
                 onClick={() => setActiveTab('cart')}
-                className="bg-white text-emerald-950 rounded-2xl px-4 py-2 font-black text-xs flex items-center gap-2 hover:bg-emerald-50 active:scale-95 transition relative cursor-pointer"
+                className="bg-white text-emerald-950 rounded-2xl px-4.5 py-2.5 font-black text-xs flex items-center gap-2 hover:bg-emerald-50 active:scale-95 transition relative cursor-pointer shadow-md"
               >
-                <ShoppingBag className="w-4 h-4 text-emerald-600" />
-                <span className="hidden sm:inline">
+                <ShoppingBag className="w-4.5 h-4.5 text-emerald-600" />
+                <span className="hidden sm:inline font-sans">
                   {cart.length > 0 ? `${cart.length} Items - ₹${automaticTotal}` : 'Empty Basket'}
                 </span>
-                <span className="sm:hidden font-mono">₹{automaticTotal}</span>
+                <span className="sm:hidden font-mono font-black">₹{automaticTotal}</span>
                 {cart.length > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white rounded-full w-4.5 h-4.5 flex items-center justify-center font-bold text-[10px] animate-pulse">
+                  <span className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white rounded-full w-5 h-5 flex items-center justify-center font-bold text-[10px] animate-pulse">
                     {cart.reduce((s,i)=> s + i.quantity, 0)}
                   </span>
                 )}
@@ -1572,20 +1592,20 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
             </div>
           </div>
 
-          {/* Search Input bar */}
-          <div className="mt-3 relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4.5 h-4.5" />
+          {/* Search Input bar (comfortably 52-56px tall, rounded and shadow) */}
+          <div className="mt-6 relative w-full px-0.5">
+            <Search className="absolute left-4.5 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
             <input
               type="text"
               placeholder='Search for organic bananas, fresh butter, shimla apples, instant cookies...'
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white text-slate-800 placeholder-slate-400 font-medium text-xs rounded-xl pl-10 pr-4 py-2.5 shadow-inner focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:bg-white"
+              className="w-full h-14 bg-white text-slate-800 placeholder-slate-400 font-semibold text-sm rounded-2xl pl-12 pr-16 shadow-lg border border-slate-150 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
             />
             {searchQuery && (
               <button 
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400"
+                className="absolute right-4.5 top-1/2 -translate-y-1/2 text-xs font-black text-emerald-600 uppercase hover:text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg transition"
               >
                 Clear
               </button>
@@ -1887,13 +1907,16 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
             </div>
 
             {/* Shop by Category Bento */}
-            <div>
-              <div className="flex justify-between items-center mb-3">
-                <h2 className="font-display text-xs font-black tracking-widest text-slate-400 uppercase">Shop by category</h2>
+            <div className="py-6 sm:py-8 border-t border-b border-slate-100/85 my-6 sm:my-8 bg-white/30 backdrop-blur-xs rounded-[32px] px-4 shadow-[inset_0_2px_8px_rgba(0,0,0,0.01)]">
+              <div className="flex justify-between items-center mb-4.5 px-1">
+                <div>
+                  <h2 className="font-display text-xs font-black tracking-widest text-slate-400 uppercase">Shop by category</h2>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">Handpicked premium grocery segments</p>
+                </div>
                 {selectedCategory && (
                   <button
                     onClick={() => setSelectedCategory(null)}
-                    className="text-xs text-emerald-600 font-extrabold hover:underline cursor-pointer"
+                    className="text-xs text-emerald-600 font-extrabold hover:underline cursor-pointer bg-emerald-50 px-3 py-1.5 rounded-lg"
                   >
                     Reset Grid
                   </button>
@@ -1903,7 +1926,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
               {isShimmering ? (
                 renderShimmerCategorySkeleton()
               ) : (
-                <div className="flex overflow-x-auto gap-3 pb-2 scrollbar-none sm:grid sm:grid-cols-4 md:grid-cols-8 sm:pb-0 w-full select-none pl-1">
+                <div className="flex overflow-x-auto gap-3.5 pb-2 scrollbar-none sm:grid sm:grid-cols-4 md:grid-cols-8 sm:pb-0 w-full select-none pl-1">
                   {categories.map((cat) => {
                     const isSelected = selectedCategory === cat.id;
                     return (
@@ -1913,16 +1936,16 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                           setSelectedCategory(isSelected ? null : cat.id);
                           setActiveTab('categories'); // Shift viewport directly
                         }}
-                        className={`p-3 rounded-2xl flex flex-col items-center justify-center text-center transition-all duration-300 hover:scale-[1.04] hover:shadow-xs cursor-pointer border group shrink-0 w-[88px] sm:w-auto ${
+                        className={`p-3.5 rounded-2xl flex flex-col items-center justify-center text-center transition-all duration-300 hover:scale-[1.04] hover:shadow-sm cursor-pointer border group shrink-0 w-24 sm:w-auto ${
                           isSelected
                             ? 'border-emerald-600 bg-emerald-50 ring-2 ring-emerald-500/10 scale-95 shadow-inner'
                             : 'border-slate-100 bg-white shadow-xs hover:border-slate-200 shadow-[0_4px_12px_rgba(0,0,0,0.01)]'
                         }`}
                       >
-                        <div className={`p-2.5 rounded-2xl ${cat.color} mb-2 flex items-center justify-center transition group-hover:rotate-6 shadow-sm`}>
+                        <div className={`p-3 rounded-2xl ${cat.color} mb-2.5 flex items-center justify-center transition group-hover:rotate-6 shadow-sm`}>
                           {getCategoryIcon(cat.icon)}
                         </div>
-                        <span className="text-[10px] font-extrabold text-slate-700 leading-tight truncate w-full uppercase">
+                        <span className="text-[10px] sm:text-xs font-black text-slate-800 leading-tight truncate w-full uppercase tracking-tight">
                           {cat.name}
                         </span>
                       </button>
@@ -3567,6 +3590,53 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                     <span className="flex items-center gap-2"><span>❤️</span> Favorite Bookmarks</span>
                     <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md">{wishlist.length} products</span>
                   </button>
+
+                  {/* APP AUDIO SETTINGS & ALARMS */}
+                  <div className="pt-3 border-t border-slate-100 mt-2 space-y-2.5">
+                    <div className="flex justify-between items-center px-1">
+                      <span className="flex items-center gap-2 font-bold text-slate-700 text-[11px]">
+                        <span>🔔</span> Notification Sounds
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextVal = !notifSound;
+                          setNotifSound(nextVal);
+                          try {
+                            localStorage.setItem('customer_sound_enabled', String(nextVal));
+                          } catch (e) {}
+                        }}
+                        className={`px-3 py-1 text-[9.5px] font-black rounded-lg transition-all cursor-pointer ${
+                          notifSound 
+                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' 
+                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        }`}
+                      >
+                        {notifSound ? 'ENABLED 🔊' : 'MUTED 🔇'}
+                      </button>
+                    </div>
+
+                    <div className="flex gap-2 px-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playOrderPlacedSound();
+                        }}
+                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 rounded-xl text-[9.5px] font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition cursor-pointer"
+                      >
+                        TEST SUCCESS CHIME 🎵
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playNotificationPopSound();
+                        }}
+                        className="flex-1 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-[9.5px] font-black flex items-center justify-center gap-1.5 border border-slate-700 active:scale-95 transition cursor-pointer"
+                      >
+                        TEST POP CHIME 🔔
+                      </button>
+                    </div>
+                  </div>
 
 
 

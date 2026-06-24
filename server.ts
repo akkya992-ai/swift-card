@@ -19,13 +19,13 @@ try {
   if (fs.existsSync(firebaseConfigPath)) {
     const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf-8'));
     const adminAny = admin as any;
-    if (adminAny.apps.length === 0) {
+    if (!adminAny.apps || adminAny.apps.length === 0) {
       firebaseAdminApp = adminAny.initializeApp({
         credential: process.env.GOOGLE_APPLICATION_CREDENTIALS ? adminAny.credential.applicationDefault() : undefined,
         projectId: firebaseConfig.projectId
       });
       console.log('🟢 [FIREBASE ADMIN SDK] Successfully initialized with project ID:', firebaseConfig.projectId);
-    } else {
+    } else if (adminAny.apps && adminAny.apps.length > 0) {
       firebaseAdminApp = adminAny.apps[0];
     }
   } else {
@@ -3201,7 +3201,7 @@ app.get('/version.json', async (req, res) => {
     latestVersion: '1.0.1',
     minimumSupportedVersion: '1.0.0',
     forceUpdate: false,
-    apkUrl: 'https://swift-cart-700512652396.asia-southeast1.run.app/assets/app-release.apk',
+    apkUrl: 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/assets/app-release.apk',
     releaseNotes: 'Daily Mart updates and optimization improvements.'
   };
 
@@ -3237,7 +3237,7 @@ app.get('/version.json', async (req, res) => {
     latestVersion: settings.latestVersion || sOpt.latestVersion || '1.0.1',
     minimumSupportedVersion: settings.minimumSupportedVersion || sOpt.minimumSupportedVersion || '1.0.0',
     forceUpdate: settings.forceUpdate ?? sOpt.forceUpdate ?? false,
-    apkUrl: settings.apkUrl || sOpt.apkUrl || 'https://swift-cart-700512652396.asia-southeast1.run.app/assets/app-release.apk',
+    apkUrl: settings.apkUrl || sOpt.apkUrl || 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/assets/app-release.apk',
     releaseNotes: settings.releaseNotes || sOpt.releaseNotes || 'Updates and critical fixes.'
   });
 });
@@ -3292,8 +3292,9 @@ app.post('/api/app-version', async (req, res) => {
 });
 
 // 2. Auth OTP Handlers
-app.post('/api/auth/send-otp', (req, res) => {
-  const { phone, role } = req.body;
+app.all('/api/auth/send-otp', (req, res) => {
+  const phone = req.body?.phone || req.query?.phone;
+  const role = req.body?.role || req.query?.role;
   if (!phone) {
     return res.status(400).json({ error: 'Phone number is required' });
   }
@@ -3783,8 +3784,17 @@ app.delete('/api/customers/:id', async (req, res) => {
   res.json({ success: true, message: 'User and all credentials purged successfully' });
 });
 
-app.post('/api/auth/verify-otp', async (req, res) => {
-  const { phone, otp, role, storeName, ownerName, email, address, vehicleNumber, name, deviceId } = req.body;
+app.all('/api/auth/verify-otp', async (req, res) => {
+  const phone = req.body?.phone || req.query?.phone;
+  const otp = req.body?.otp || req.query?.otp;
+  const role = req.body?.role || req.query?.role;
+  const storeName = req.body?.storeName || req.query?.storeName;
+  const ownerName = req.body?.ownerName || req.query?.ownerName;
+  const email = req.body?.email || req.query?.email;
+  const address = req.body?.address || req.query?.address;
+  const vehicleNumber = req.body?.vehicleNumber || req.query?.vehicleNumber;
+  const name = req.body?.name || req.query?.name;
+  const deviceId = req.body?.deviceId || req.query?.deviceId;
   const targetDevice = deviceId || 'unknown_web_device';
 
   if (!phone || !otp) {

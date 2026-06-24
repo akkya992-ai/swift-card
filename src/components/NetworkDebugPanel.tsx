@@ -186,9 +186,9 @@ export default function NetworkDebugPanel() {
                 <button
                   type="button"
                   onClick={() => {
-                    localStorage.setItem('swiftcart_api_base_override', 'https://swift-cart-700512652396.asia-southeast1.run.app');
-                    setIpInput('https://swift-cart-700512652396.asia-southeast1.run.app');
-                    setCustomOverride('https://swift-cart-700512652396.asia-southeast1.run.app');
+                    localStorage.setItem('swiftcart_api_base_override', 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
+                    setIpInput('https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
+                    setCustomOverride('https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
                     setApiBase(getApiBase());
                     setShowNotification(true);
                     setTimeout(() => setShowNotification(false), 2000);

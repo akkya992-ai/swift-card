@@ -54,8 +54,7 @@ export const getIsCapacitor = (): boolean => {
 
 export const CANDIDATE_BACKENDS = [
   'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app',
-  'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app',
-  'https://swift-cart-700512652396.asia-southeast1.run.app'
+  'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app'
 ];
 
 export const startBackendAutoDiscovery = () => {
@@ -117,7 +116,7 @@ export const startBackendAutoDiscovery = () => {
  * - import.meta.env.VITE_API_BASE_URL (highest priority)
  * - localStorage override key: swiftcart_api_base_override
  * - Dynamic auto-discovered working backend URL
- * - fallback to Cloud Run backend URL: https://swift-cart-700512652396.asia-southeast1.run.app
+ * - fallback to Cloud Run backend URL: https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app
  *
  * 3. Remove any logic that forces window.location.origin as API base unless backend is confirmed same-origin.
  */
@@ -274,10 +273,10 @@ export const resolveApiUrl = (url: string): string => {
       // Native Capacitor mobile application logic
       let nativeBase = apiBase;
       if (!nativeBase || nativeBase === '/' || !nativeBase.startsWith('http')) {
-        nativeBase = 'https://swift-cart-700512652396.asia-southeast1.run.app';
+        nativeBase = 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
       } else if (nativeBase.includes('localhost')) {
         // A native platform should never request localhost of the host machine unless customized
-        nativeBase = 'https://swift-cart-700512652396.asia-southeast1.run.app';
+        nativeBase = 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
       }
       
       const resolved = safeUrlJoin(nativeBase, apiPath);

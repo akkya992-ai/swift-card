@@ -54,6 +54,7 @@ import {
   Cell
 } from 'recharts';
 import { Order, SellerProfile, RiderProfile, Product } from '../types';
+import { playNewOrderAlarm } from '../audioUtils';
 
 interface AdminDashboardProps {
   userProfile: any;
@@ -80,6 +81,8 @@ export interface Banner {
 }
 
 export default function AdminDashboard({ userProfile, onLogout }: AdminDashboardProps) {
+  const [initLoading, setInitLoading] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [sellers, setSellers] = useState<SellerProfile[]>([]);
   const [riders, setRiders] = useState<RiderProfile[]>([]);
@@ -484,30 +487,35 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
     try {
       // Load orders
       const oRes = await fetch('/api/orders');
-      if (oRes.ok) {
-        const oData: any[] = await oRes.json();
-        setOrders(oData);
+      if (!oRes.ok) {
+        if (oRes.status === 401 || oRes.status === 403) {
+          throw new Error('Your admin session has expired (Unauthorized 401/403). Please sign out and log back in.');
+        }
+        throw new Error(`Failed to load platform orders (HTTP ${oRes.status})`);
+      }
+      const oData: any[] = await oRes.json();
+      setOrders(oData);
 
-        // Alert algorithm for Admin for any newly placed order
-        const placedOrders = oData.filter(o => o.status === 'placed');
-        if (placedOrders.length > 0) {
-          if (isFirstLoadRef.current) {
-            setSeenOrderIds(oData.map(o => o.id));
-            isFirstLoadRef.current = false;
-          } else {
-            const freshTicket = placedOrders.find(o => !seenOrderIds.includes(o.id));
-            if (freshTicket) {
-              setNewOrderAlert(freshTicket);
-              setSeenOrderIds(prev => [...prev, freshTicket.id]);
-              
-              // Audio click/pop tone trigger
-              try {
-                const ring = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-84.wav');
-                ring.volume = 0.5;
-                ring.play().catch(() => {});
-              } catch (se) {
-                console.log("Admin sound bypassed", se);
-              }
+      // Alert algorithm for Admin for any newly placed order
+      const placedOrders = oData.filter(o => o.status === 'placed');
+      if (placedOrders.length > 0) {
+        if (isFirstLoadRef.current) {
+          setSeenOrderIds(oData.map(o => o.id));
+          isFirstLoadRef.current = false;
+        } else {
+          const freshTicket = placedOrders.find(o => !seenOrderIds.includes(o.id));
+          if (freshTicket) {
+            setNewOrderAlert(freshTicket);
+            setSeenOrderIds(prev => [...prev, freshTicket.id]);
+            
+            // Audio click/pop tone trigger (Guaranteed offline-ready synthetic sound fallback)
+            playNewOrderAlarm();
+            try {
+              const ring = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-84.wav');
+              ring.volume = 0.5;
+              ring.play().catch(() => {});
+            } catch (se) {
+              console.log("Admin sound bypassed", se);
             }
           }
         }
@@ -515,51 +523,67 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
 
       // Load sellers
       const sRes = await fetch('/api/sellers');
-      if (sRes.ok) {
-        const sData = await sRes.json();
-        setSellers(sData);
+      if (!sRes.ok) {
+        throw new Error(`Failed to load seller directories (HTTP ${sRes.status})`);
       }
+      const sData = await sRes.json();
+      setSellers(sData);
 
       // Load riders
       const rRes = await fetch('/api/riders');
-      if (rRes.ok) {
-        const rData = await rRes.json();
-        setRiders(rData);
+      if (!rRes.ok) {
+        throw new Error(`Failed to load rider directories (HTTP ${rRes.status})`);
       }
+      const rData = await rRes.json();
+      setRiders(rData);
 
       // Load products
       const pRes = await fetch('/api/products');
-      if (pRes.ok) {
-        const pData = await pRes.json();
-        setProducts(pData);
+      if (!pRes.ok) {
+        throw new Error(`Failed to load product catalog (HTTP ${pRes.status})`);
       }
+      const pData = await pRes.json();
+      setProducts(pData);
 
       // Load customers
       const cRes = await fetch('/api/customers');
-      if (cRes.ok) {
-        const cData = await cRes.json();
-        setCustomers(cData);
+      if (!cRes.ok) {
+        throw new Error(`Failed to load customer profiles (HTTP ${cRes.status})`);
       }
+      const cData = await cRes.json();
+      setCustomers(cData);
 
       // Load coupons
-      const cpRes = await fetch('/api/coupons');
-      if (cpRes.ok) {
-        const cpData = await cpRes.json();
-        setCoupons(cpData);
+      try {
+        const cpRes = await fetch('/api/coupons');
+        if (cpRes.ok) {
+          const cpData = await cpRes.json();
+          setCoupons(cpData);
+        }
+      } catch (cpE) {
+        console.warn('Optional coupons load failed', cpE);
       }
 
       // Load banners
-      const bRes = await fetch('/api/banners');
-      if (bRes.ok) {
-        const bData = await bRes.json();
-        setBanners(bData);
+      try {
+        const bRes = await fetch('/api/banners');
+        if (bRes.ok) {
+          const bData = await bRes.json();
+          setBanners(bData);
+        }
+      } catch (bE) {
+        console.warn('Optional banners load failed', bE);
       }
 
       // Load outbound notifications
-      const notRes = await fetch('/api/outbound-notifications');
-      if (notRes.ok) {
-        const notData = await notRes.json();
-        setOutboundNotifications(notData || []);
+      try {
+        const notRes = await fetch('/api/outbound-notifications');
+        if (notRes.ok) {
+          const notData = await notRes.json();
+          setOutboundNotifications(notData || []);
+        }
+      } catch (notE) {
+        console.warn('Optional outbound notifications load failed', notE);
       }
 
       // Load FCM diagnostics
@@ -576,8 +600,14 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
       // Load role requests
       await fetchRoleRequests();
 
-    } catch (e) {
+      setInitError(null);
+      setInitLoading(false);
+
+    } catch (e: any) {
       console.error('Error fetching admin metrics', e);
+      if (initLoading || orders.length === 0) {
+        setInitError(e.message || 'Unknown initialization error occurred. Please verify secure datastore status.');
+      }
     }
   };
 
@@ -1029,7 +1059,8 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
       dailyOrders.forEach(o => {
         const categoriesInOrder = new Set<string>();
 
-        o.items.forEach(item => {
+        (o.items || []).forEach(item => {
+          if (!item || !item.product) return;
           const catId = item.product.category;
           const catObj = CATEGORIES_MAP.find(c => c.id === catId);
           const catName = catObj ? catObj.name : 'Others';
@@ -1037,9 +1068,9 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
           if (selectedMetric === 'count') {
             categoriesInOrder.add(catName);
           } else if (selectedMetric === 'quantity') {
-            dataPoint[catName] = (dataPoint[catName] || 0) + item.quantity;
+            dataPoint[catName] = (dataPoint[catName] || 0) + (item.quantity || 0);
           } else if (selectedMetric === 'revenue') {
-            dataPoint[catName] = (dataPoint[catName] || 0) + (item.product.price * item.quantity);
+            dataPoint[catName] = (dataPoint[catName] || 0) + ((item.product.price || 0) * (item.quantity || 0));
           }
         });
 
@@ -1140,6 +1171,85 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
       (c.phone || '').toLowerCase().includes(customerSearch.toLowerCase())
     );
   }, [customers, customerSearch]);
+
+  if (initError) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-white font-sans">
+        <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-3xl shadow-2xl p-8 text-center space-y-6 relative overflow-hidden">
+          <div className="absolute -top-12 -left-12 w-32 h-32 bg-red-500/15 rounded-full blur-2xl animate-pulse animate-duration-3000"></div>
+          <div className="absolute -bottom-12 -right-12 w-32 h-32 bg-amber-500/15 rounded-full blur-2xl animate-pulse animate-duration-3000"></div>
+
+          <div className="mx-auto w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center text-red-500">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-2">
+            <span className="text-[10px] font-black tracking-widest text-red-400 uppercase bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20">
+              Initialization Blocked
+            </span>
+            <h3 className="text-xl font-black text-white tracking-tight mt-3">Operations Suite Unreachable</h3>
+            <p className="text-xs text-slate-400 font-medium leading-relaxed">
+              We encountered a connection block or session expiry while pulling your admin terminal data. This usually happens if you are disconnected or the database is restarting.
+            </p>
+          </div>
+
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-left font-mono text-[11px] text-red-400/95 leading-normal break-words whitespace-pre-wrap max-h-40 overflow-y-auto">
+            <div className="text-[9px] text-slate-500 uppercase font-black tracking-wider mb-1">Diagnostic Detail:</div>
+            {initError}
+          </div>
+
+          <div className="flex flex-col gap-2 pt-2">
+            <button
+              onClick={() => {
+                setInitError(null);
+                setInitLoading(true);
+                fetchMetrics();
+              }}
+              className="py-3 px-5 bg-gradient-to-r from-red-650 to-amber-600 hover:from-red-600 hover:to-amber-550 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-lg shadow-red-500/20 flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              RE-ESTABLISH CONNECTION
+            </button>
+            <button
+              onClick={onLogout}
+              className="py-3 px-5 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white text-xs font-bold rounded-xl transition cursor-pointer border border-slate-750/60 flex items-center justify-center gap-2"
+            >
+              <PowerOff className="w-4 h-4" />
+              SIGN OFF OPERATOR
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (initLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-white font-sans">
+        <div className="max-w-sm w-full text-center space-y-6">
+          <div className="relative w-20 h-20 mx-auto">
+            <div className="absolute inset-0 rounded-3xl border border-slate-800 animate-ping"></div>
+            <div className="absolute inset-2 rounded-2xl border-2 border-slate-700/40 border-t-amber-500 animate-spin" style={{ animationDuration: '1.5s' }}></div>
+            <div className="absolute inset-4 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-amber-500">
+              <RefreshCw className="w-5 h-5 animate-spin" style={{ animationDuration: '3s' }} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h4 className="text-[10px] font-black tracking-widest text-slate-550 uppercase">Securing Command Core</h4>
+            <h2 className="text-base font-black text-white tracking-tight">Accessing Daily Mart Admin...</h2>
+            <p className="text-[11px] text-slate-400 font-medium max-w-xs mx-auto">
+              Decrypting system credentials, establishing secure session, and auditing live transaction lanes.
+            </p>
+          </div>
+          <div className="flex justify-center gap-1.5 pt-1">
+            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 md:p-6 space-y-6">
@@ -1826,27 +1936,31 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
           </div>
 
           {/* Details Row Dropdown Info */}
-          {selectedOrderRow && orders.find(o => o.id === selectedOrderRow) && (
-            <div className="p-5 bg-slate-50 border border-slate-100 rounded-3xl space-y-2 text-xs">
-              <div className="flex justify-between items-center border-b pb-2">
-                <span className="font-extrabold text-slate-900">Order Particulars: #{selectedOrderRow}</span>
-                <span className="font-mono text-slate-400">Placed: {new Date(orders.find(o => o.id === selectedOrderRow)!.createdAt).toLocaleString()}</span>
+          {selectedOrderRow && (() => {
+            const currentSelectedOrder = orders.find(o => o.id === selectedOrderRow);
+            if (!currentSelectedOrder) return null;
+            return (
+              <div className="p-5 bg-slate-50 border border-slate-100 rounded-3xl space-y-2 text-xs">
+                <div className="flex justify-between items-center border-b pb-2">
+                  <span className="font-extrabold text-slate-900">Order Particulars: #{selectedOrderRow}</span>
+                  <span className="font-mono text-slate-400">Placed: {currentSelectedOrder.createdAt ? new Date(currentSelectedOrder.createdAt).toLocaleString() : 'N/A'}</span>
+                </div>
+                <div className="space-y-1.5 py-1">
+                  {(currentSelectedOrder.items || []).map((item, idx) => (
+                    <div key={item?.product?.id || idx} className="flex justify-between font-semibold text-slate-600">
+                      <span>{item?.product?.name || 'Item'} x {item?.quantity || 1} ({item?.selectedVariant || item?.product?.unit || 'unit'})</span>
+                      <span className="font-mono">₹ {(item?.product?.price || 0) * (item?.quantity || 1)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="h-px bg-slate-200"></div>
+                <div className="flex justify-between font-black text-slate-900 text-xs">
+                  <span>Total bill value (with promo):</span>
+                  <span className="font-mono">₹ {currentSelectedOrder.total || 0}</span>
+                </div>
               </div>
-              <div className="space-y-1.5 py-1">
-                {orders.find(o => o.id === selectedOrderRow)!.items.map(item => (
-                  <div key={item.product.id} className="flex justify-between font-semibold text-slate-600">
-                    <span>{item.product.name} x {item.quantity} ({item.selectedVariant || item.product.unit})</span>
-                    <span className="font-mono">₹ {item.product.price * item.quantity}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="h-px bg-slate-200"></div>
-              <div className="flex justify-between font-black text-slate-900 text-xs">
-                <span>Total bill value (with promo):</span>
-                <span className="font-mono">₹ {orders.find(o => o.id === selectedOrderRow)!.total}</span>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
         </div>
       )}

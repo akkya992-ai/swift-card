@@ -36,6 +36,7 @@ import {
   VolumeX
 } from 'lucide-react';
 import { Product, Order, Category } from '../types';
+import { playNewOrderAlarm } from '../audioUtils';
 
 interface SellerDashboardProps {
   userProfile: any;
@@ -292,31 +293,9 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
     }
 
     const playSiren = () => {
-      // 1. Audio Siren Tone
+      // 1. Audio Siren Tone (Guaranteed offline-ready synthetic sound)
       try {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        if (audioCtx.state === 'suspended') {
-          audioCtx.resume();
-        }
-        const playTone = (freq: number, startTime: number, duration: number) => {
-          const osc = audioCtx.createOscillator();
-          const gain = audioCtx.createGain();
-          osc.connect(gain);
-          gain.connect(audioCtx.destination);
-          
-          osc.type = 'sawtooth';
-          osc.frequency.setValueAtTime(freq, startTime);
-          
-          gain.gain.setValueAtTime(0.12, startTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
-          
-          osc.start(startTime);
-          osc.stop(startTime + duration);
-        };
-
-        const now = audioCtx.currentTime;
-        playTone(987.77, now, 0.3); // High Pitch
-        playTone(783.99, now + 0.35, 0.3); // Low Pitch
+        playNewOrderAlarm();
       } catch (err) {
         console.warn('Web Audio Playback blocked/skipped:', err);
       }
@@ -414,7 +393,8 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
               setNewOrderAlert(targetNewTicket);
               setSeenOrderIds(prev => [...prev, targetNewTicket.id]);
 
-              // Trigger a classic physical bell ring audio frequency for the dark store operator
+              // Trigger 100% offline-ready synthetic sound and standard audio file fallback
+              playNewOrderAlarm();
               try {
                 const ringtone = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-84.wav');
                 ringtone.volume = 0.6;
@@ -902,6 +882,18 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
             <div className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Active Prep</div>
             <div className="text-lg font-black text-amber-400 font-mono mt-0.5">{activePreparingOrders.length} tickets</div>
           </div>
+          <button 
+            onClick={() => {
+              playNewOrderAlarm();
+              alert("🔊 Audio Alert Synthesized! This plays a sharp alarm beep completely offline, perfect for mobile APKs. Tap anywhere on the screen first if you didn't hear anything.");
+            }}
+            className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-slate-950 rounded-xl border border-emerald-500/30 transition shrink-0 cursor-pointer flex items-center gap-2 font-black text-xs shadow-md"
+            title="Test Terminal Sound"
+          >
+            <Volume2 className="w-4 h-4 shrink-0 text-slate-950" />
+            <span>TEST ALARM SOUND</span>
+          </button>
+
           <button 
             onClick={() => fetchSellerScope(true)}
             disabled={isRefreshing}

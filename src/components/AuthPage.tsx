@@ -497,7 +497,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
         console.log('API BASE', apiBase);
         console.log('IS CAPACITOR', isCapacitor);
 
-        const res = await fetch(`${apiBase}/api/auth/send-otp`, {
+        const res = await fetch(`${apiBase}/api/auth/send-otp?phone=${encodeURIComponent(cleaned)}&role=${encodeURIComponent(selectedRole)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone: cleaned, role: selectedRole })
@@ -508,7 +508,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
           throw new Error(data.error || 'Failed to dispatch sandbox OTP.');
         }
 
-        const verifyRes = await fetch(`${apiBase}/api/auth/verify-otp`, {
+        const verifyRes = await fetch(`${apiBase}/api/auth/verify-otp?phone=${encodeURIComponent(cleaned)}&otp=4020&role=${encodeURIComponent(selectedRole)}&storeName=${encodeURIComponent(storeName || '')}&name=${encodeURIComponent(fullName || (selectedRole === 'seller' ? 'Store Partner' : selectedRole === 'rider' ? 'Delivery Partner' : 'Customer'))}&vehicleNumber=${encodeURIComponent(vehicleNumber || '')}&address=${encodeURIComponent(address || '')}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -588,7 +588,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
         // Transition instantly to Sandbox mock send OTP
         try {
           const apiBase = getApiBase();
-          const res = await fetch(`${apiBase}/api/auth/send-otp`, {
+          const res = await fetch(`${apiBase}/api/auth/send-otp?phone=${encodeURIComponent(cleaned)}&role=${encodeURIComponent(selectedRole)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ phone: cleaned, role: selectedRole })
@@ -627,11 +627,12 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
       // Verify mock code from back-end
       try {
         const apiBase = getApiBase();
-        const res = await fetch(`${apiBase}/api/auth/verify-otp`, {
+        const cleanPh = phone.replace(/\D/g, '');
+        const res = await fetch(`${apiBase}/api/auth/verify-otp?phone=${encodeURIComponent(cleanPh)}&otp=${encodeURIComponent(otpCode)}&role=${encodeURIComponent(selectedRole)}&storeName=${encodeURIComponent(storeName || '')}&name=${encodeURIComponent(fullName || 'Partner Manager')}&vehicleNumber=${encodeURIComponent(vehicleNumber || '')}&address=${encodeURIComponent(address || '')}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            phone: phone.replace(/\D/g, ''),
+            phone: cleanPh,
             otp: otpCode,
             role: selectedRole,
             storeName,
@@ -1462,7 +1463,7 @@ export default function AuthPage({ onLoginSuccess, selectedRole, setSelectedRole
                 </label>
                 <input 
                   type="text"
-                  placeholder="https://swift-cart-700512652396.asia-southeast1.run.app"
+                  placeholder="https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app"
                   value={localStorage.getItem('swiftcart_api_base_override') || ''}
                   onChange={(e) => {
                     const val = e.target.value.trim();

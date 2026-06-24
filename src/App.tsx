@@ -13,6 +13,7 @@ import RiderDashboard from './components/RiderDashboard';
 import LegalPages from './components/LegalPages';
 import RoleSelector from './components/RoleSelector';
 import { getIsCapacitor, getApiBase } from './apiConfig';
+import { playRiderDispatchSound } from './audioUtils';
 // @ts-ignore
 import dailyMartLogo from './assets/images/daily_mart_green_logo_1781598237470.jpg';
 
@@ -206,6 +207,8 @@ export default function App() {
 
     const playGlobalAudioAlarm = (style = 'chirp', vol = 0.6) => {
       try {
+        // Play guaranteed offline-ready synthetic tone first
+        playRiderDispatchSound();
         const url = alarmSoundUrls[style] || alarmSoundUrls.chirp;
         const audio = new Audio(url);
         audio.volume = vol;
