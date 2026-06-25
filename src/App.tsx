@@ -483,6 +483,22 @@ export default function App() {
     };
 
     checkAppVersion();
+
+    // Periodically re-fetch version info every 30 minutes to keep app up-to-date
+    const intervalId = setInterval(checkAppVersion, 30 * 60 * 1000);
+
+    // Re-check when app returns to foreground
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkAppVersion();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   const handleOpenUpdateUrl = async (url: string) => {
