@@ -52,6 +52,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Category, Product, CartItem, Order, UserRole } from '../types';
 import { PushNotifications } from '@capacitor/push-notifications';
+import { Browser } from '@capacitor/browser';
 
 // Import our modular sub-components
 import LiveTracking from './LiveTracking';
@@ -4855,10 +4856,19 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
       </AnimatePresence>
 
       {/* FLOATING WHATSAPP BUTTON */}
-      <a
-        href="https://wa.me/917032865951?text=Hello%20Daily%20Mart%20Support!%20I%20have%20an%20inquiry%20regarding%20my%20order."
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        onClick={async () => {
+          const waUrl = "https://wa.me/917032865951?text=Hello%20Daily%20Mart%20Support!%20I%20have%20an%20inquiry%20regarding%20my%20order.";
+          try {
+            if (typeof window !== 'undefined' && !!(window as any).Capacitor) {
+              await Browser.open({ url: waUrl });
+            } else {
+              window.open(waUrl, '_blank');
+            }
+          } catch (e) {
+            window.open(waUrl, '_blank');
+          }
+        }}
         title="Chat on WhatsApp"
         className="fixed bottom-24 md:bottom-8 right-4 md:right-8 z-50 flex items-center justify-center w-12 h-12 bg-[#25D366] hover:bg-[#20ba5a] active:scale-95 text-white rounded-full shadow-2xl transition-all duration-300 hover:scale-110 group border border-emerald-400/20 cursor-pointer"
       >
@@ -4873,7 +4883,7 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
         >
           <path d="M12.004 2C6.48 2 2 6.48 2 12.004c0 1.815.485 3.515 1.333 5.002L2 22l5.12-1.311a9.948 9.948 0 004.884 1.315C17.52 22 22 17.52 22 12.004 22 6.48 17.52 2 12.004 2zm5.727 14.124c-.244.688-1.22 1.258-1.683 1.311-.476.054-.952.081-2.906-.713-2.5-1.018-4.11-3.565-4.238-3.731-.115-.164-.985-1.309-.985-2.493 0-1.184.62-1.763.84-2.002.213-.242.476-.3.633-.3.16 0 .324.004.464.01.146.007.34-.055.534.407.2.476.685 1.666.745 1.785.06.121.1.261.02.422-.08.163-.12.261-.24.402-.12.141-.253.315-.361.423-.12.12-.244.25-.104.492.14.242.62 1.022 1.332 1.656.918.818 1.693 1.07 1.933 1.19.24.12.38.1.52-.06.14-.16.6-.7 1.02-1.242.08-.105.128-.152.26-.06.132.09.837.394.981.464.144.07.24.105.274.164.035.06.035.344-.21.1z"/>
         </svg>
-      </a>
+      </button>
 
     </div>
   );
