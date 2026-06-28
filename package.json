@@ -23,11 +23,14 @@
     "@tailwindcss/vite": "^4.1.14",
     "@vis.gl/react-google-maps": "^1.8.3",
     "@vitejs/plugin-react": "^5.0.4",
+    "autoprefixer": "^10.4.21",
     "dotenv": "^17.2.3",
+    "esbuild": "^0.25.0",
     "express": "^4.21.2",
     "firebase": "^12.14.0",
     "firebase-admin": "^14.0.0",
     "ioredis": "^5.11.1",
+    "jimp": "^1.6.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
@@ -35,6 +38,9 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.8.1",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
     "vite": "^6.2.3"
   },
   "overrides": {
@@ -47,13 +53,6 @@
     "@types/node": "^22.14.0",
     "@types/pg": "^8.20.0",
     "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
-    "jimp": "^1.6.1",
-    "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "@types/react-dom": "^19.2.3"
   }
 }

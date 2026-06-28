@@ -522,7 +522,10 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
       }
 
       // Load sellers
-      const sRes = await fetch('/api/sellers');
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
+      const sRes = await fetch('/api/sellers', {
+        headers: savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {}
+      });
       if (!sRes.ok) {
         throw new Error(`Failed to load seller directories (HTTP ${sRes.status})`);
       }
@@ -530,7 +533,9 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
       setSellers(sData);
 
       // Load riders
-      const rRes = await fetch('/api/riders');
+      const rRes = await fetch('/api/riders', {
+        headers: savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {}
+      });
       if (!rRes.ok) {
         throw new Error(`Failed to load rider directories (HTTP ${rRes.status})`);
       }
@@ -546,7 +551,9 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
       setProducts(pData);
 
       // Load customers
-      const cRes = await fetch('/api/customers');
+      const cRes = await fetch('/api/customers', {
+        headers: savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {}
+      });
       if (!cRes.ok) {
         throw new Error(`Failed to load customer profiles (HTTP ${cRes.status})`);
       }
@@ -604,7 +611,11 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
       setInitLoading(false);
 
     } catch (e: any) {
-      console.error('Error fetching admin metrics', e);
+      console.warn('Admin metrics sync note:', e.message || e);
+      if (e.message && (e.message.includes('session has expired') || e.message.includes('401') || e.message.includes('403'))) {
+        onLogout();
+        return;
+      }
       if (initLoading || orders.length === 0) {
         setInitError(e.message || 'Unknown initialization error occurred. Please verify secure datastore status.');
       }
@@ -658,9 +669,13 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   const handleApproveSeller = async (sellerId: string, status: 'approved' | 'rejected') => {
     setLoading(true);
     try {
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch(`/api/sellers/${sellerId}/approve`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${savedToken}`
+        },
         body: JSON.stringify({ status })
       });
 
@@ -728,9 +743,13 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
     if (!newCouponCode) return;
     setLoading(true);
     try {
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch('/api/coupons', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${savedToken}`
+        },
         body: JSON.stringify({
           code: newCouponCode,
           discountType: newCouponType,
@@ -758,7 +777,13 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   const handleDeleteCoupon = async (code: string) => {
     if (!confirm(`Are you certain you want to purge coupon [${code}]?`)) return;
     try {
-      const res = await fetch(`/api/coupons/${code}`, { method: 'DELETE' });
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
+      const res = await fetch(`/api/coupons/${code}`, { 
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${savedToken}`
+        }
+      });
       if (res.ok) {
         setStatusMsg(`Coupon ${code} purged from directory.`);
         setTimeout(() => setStatusMsg(''), 4000);
@@ -775,9 +800,13 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
     if (!newBannerTitle || !newBannerImage) return;
     setLoading(true);
     try {
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch('/api/banners', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${savedToken}`
+        },
         body: JSON.stringify({
           title: newBannerTitle,
           subtitle: newBannerSubtitle,
@@ -804,7 +833,13 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   const handleDeleteBanner = async (id: string) => {
     if (!confirm('Are you dynamic banner to be delisted from customers home page?')) return;
     try {
-      const res = await fetch(`/api/banners/${id}`, { method: 'DELETE' });
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
+      const res = await fetch(`/api/banners/${id}`, { 
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${savedToken}`
+        }
+      });
       if (res.ok) {
         setStatusMsg('Promo banner purged.');
         setTimeout(() => setStatusMsg(''), 4000);
@@ -819,7 +854,11 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   const handleDeleteCustomer = async (id: string) => {
     if (!confirm('Are you absolutely sure you want to ban/purge this customer index from Daily Mart database?')) return;
     try {
-      const res = await fetch(`/api/customers/${id}`, { method: 'DELETE' });
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
+      const res = await fetch(`/api/customers/${id}`, { 
+        method: 'DELETE',
+        headers: savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {}
+      });
       const data = await res.json();
       if (res.ok) {
         setStatusMsg('Customer profile safely purged from database.');
@@ -838,7 +877,13 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
     if (!confirm('Are you absolutely sure you want to permanently delete this Seller and ALL their associated products, inventory, and orders from Supabase? This action is IRREVERSIBLE.')) return;
     try {
       console.log(`[ADMIN DELETE SELLER] Deleting seller with ID: ${id}`);
-      const res = await fetch(`/api/sellers/${id}`, { method: 'DELETE' });
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
+      const res = await fetch(`/api/sellers/${id}`, { 
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${savedToken}`
+        }
+      });
       const data = await res.json();
       if (res.ok) {
         setStatusMsg('Seller profile and all nested shop data permanently deleted.');
@@ -859,7 +904,13 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
     if (!confirm('Are you absolutely sure you want to permanently delete this Delivery Rider and unset their assigned orders from Supabase? This action is IRREVERSIBLE.')) return;
     try {
       console.log(`[ADMIN DELETE RIDER] Deleting rider with ID: ${id}`);
-      const res = await fetch(`/api/riders/${id}`, { method: 'DELETE' });
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
+      const res = await fetch(`/api/riders/${id}`, { 
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${savedToken}`
+        }
+      });
       const data = await res.json();
       if (res.ok) {
         setStatusMsg('Rider profile and related assets completely deleted.');

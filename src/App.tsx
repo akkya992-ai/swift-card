@@ -233,6 +233,7 @@ export default function App() {
 
     // Pre-populate already existing orders once to avoid historic sirens
     const seedActiveIds = async () => {
+      if (!localStorage.getItem('swiftcart_jwt_token')) return;
       try {
         const res = await fetch('/api/orders');
         if (res.ok) {
@@ -257,6 +258,7 @@ export default function App() {
     seedActiveIds();
 
     const checkBackgroundAlarms = async () => {
+      if (!localStorage.getItem('swiftcart_jwt_token')) return;
       try {
         const res = await fetch('/api/orders');
         if (!res.ok) return;

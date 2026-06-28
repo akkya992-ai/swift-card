@@ -348,8 +348,8 @@ BEGIN
     -- 1. Transiting from placed -> confirmed: finalize the deduction by actualizing stock and removing from reserved_stock
     IF (NEW.status = 'confirmed' OR NEW.status = 'dispatched' OR NEW.status = 'delivered') AND (OLD.status = 'placed') THEN
         UPDATE inventory i
-        SET stock = i.stock - oi.quantity,
-            reserved_stock = i.reserved_stock - oi.quantity,
+        SET stock = GREATEST(0, i.stock - oi.quantity),
+            reserved_stock = GREATEST(0, i.reserved_stock - oi.quantity),
             updated_at = NOW()
         FROM order_items oi
         WHERE oi.order_id = NEW.id AND i.product_id = oi.product_id;
@@ -358,7 +358,7 @@ BEGIN
     -- 2. Transiting from placed -> cancelled: simply unreserve the stock
     IF NEW.status = 'cancelled' AND OLD.status = 'placed' THEN
         UPDATE inventory i
-        SET reserved_stock = i.reserved_stock - oi.quantity,
+        SET reserved_stock = GREATEST(0, i.reserved_stock - oi.quantity),
             updated_at = NOW()
         FROM order_items oi
         WHERE oi.order_id = NEW.id AND i.product_id = oi.product_id;

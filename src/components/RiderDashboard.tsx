@@ -414,18 +414,21 @@ export default function RiderDashboard({ userProfile, onLogout, reloadUserProfil
   // Background offline alarm simulation states for Rider
   const [swSimulating, setSwSimulating] = useState(false);
   const [swCountdown, setSwCountdown] = useState(0);
+  const [swMessage, setSwMessage] = useState('');
 
   const triggerBackgroundSimulation = () => {
     if (typeof window === 'undefined') return;
     if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
-      alert('Local Service Worker is initializing. Ensure notifications are permitted and try again in a second!');
+      setSwMessage('Local Service Worker is initializing. Ensure notifications are permitted and try again in a second!');
+      setTimeout(() => setSwMessage(''), 6000);
       return;
     }
 
     if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
       Notification.requestPermission().then(perm => {
         if (perm !== 'granted') {
-          alert('System OS Notification permission is highly suggested for background alarms to buzz when the app is minimized!');
+          setSwMessage('System OS Notification permission is highly suggested for background alarms to buzz when the app is minimized!');
+          setTimeout(() => setSwMessage(''), 6000);
         }
       });
     }
@@ -960,14 +963,21 @@ export default function RiderDashboard({ userProfile, onLogout, reloadUserProfil
             <span className="text-xs font-bold text-slate-350 block">Simulate closed app scenario</span>
           </div>
           
-          <button
-            type="button"
-            onClick={triggerBackgroundSimulation}
-            disabled={swSimulating}
-            className="w-full sm:w-auto px-5 py-3 bg-red-600 hover:bg-red-700 disabled:bg-slate-800 disabled:text-slate-500 text-white font-black rounded-xl text-xs uppercase tracking-wide transition shadow-sm cursor-pointer hover:shadow"
-          >
-            {swSimulating ? `Starting in ${swCountdown}s (Now Lock/Minimize App!)` : '⚡ Simulate Offline Alarm'}
-          </button>
+          <div className="flex flex-col items-end gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={triggerBackgroundSimulation}
+              disabled={swSimulating}
+              className="w-full sm:w-auto px-5 py-3 bg-red-600 hover:bg-red-700 disabled:bg-slate-800 disabled:text-slate-500 text-white font-black rounded-xl text-xs uppercase tracking-wide transition shadow-sm cursor-pointer hover:shadow"
+            >
+              {swSimulating ? `Starting in ${swCountdown}s (Now Lock/Minimize App!)` : '⚡ Simulate Offline Alarm'}
+            </button>
+            {swMessage && (
+              <div className="p-2 bg-amber-500/20 border border-amber-500/40 rounded-xl text-amber-300 text-[11px] font-bold text-right max-w-sm">
+                {swMessage}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       

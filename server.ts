@@ -20,10 +20,13 @@ try {
     const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf-8'));
     const adminAny = admin as any;
     if (!adminAny.apps || adminAny.apps.length === 0) {
-      firebaseAdminApp = adminAny.initializeApp({
-        credential: process.env.GOOGLE_APPLICATION_CREDENTIALS ? adminAny.credential.applicationDefault() : undefined,
-        projectId: firebaseConfig.projectId
-      });
+      const initOptions: any = { projectId: firebaseConfig.projectId };
+      try {
+        if (adminAny.credential && typeof adminAny.credential.applicationDefault === 'function') {
+          initOptions.credential = adminAny.credential.applicationDefault();
+        }
+      } catch (ce) {}
+      firebaseAdminApp = adminAny.initializeApp(initOptions);
       console.log('🟢 [FIREBASE ADMIN SDK] Successfully initialized with project ID:', firebaseConfig.projectId);
     } else if (adminAny.apps && adminAny.apps.length > 0) {
       firebaseAdminApp = adminAny.apps[0];
@@ -51,6 +54,47 @@ app.use((req, res, next) => {
   
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
+  }
+  next();
+});
+
+// --- SECURITY HARDENING RATE LIMITERS ---
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+function createRateLimiter(maxRequests: number, windowMs: number) {
+  return (req: any, res: any, next: any) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+    const key = `${req.path}_${ip}`;
+    const now = Date.now();
+    const record = rateLimitMap.get(key) || { count: 0, resetTime: now + windowMs };
+    if (now > record.resetTime) {
+      record.count = 0;
+      record.resetTime = now + windowMs;
+    }
+    record.count++;
+    rateLimitMap.set(key, record);
+    if (record.count > maxRequests) {
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    }
+    next();
+  };
+}
+
+const authLimiter = createRateLimiter(60, 60 * 1000);
+const otpLimiter = createRateLimiter(30, 60 * 1000);
+const adminAuthLimiter = createRateLimiter(20, 60 * 1000);
+const checkoutLimiter = createRateLimiter(60, 60 * 1000);
+const refundLimiter = createRateLimiter(30, 60 * 1000);
+
+app.use('/api/auth/send-otp', otpLimiter);
+app.use('/api/auth/verify-otp', otpLimiter);
+app.use('/api/auth/verify-admin-password', adminAuthLimiter);
+app.use('/api/auth', authLimiter);
+app.use((req, res, next) => {
+  if (req.method === 'POST' && (req.path === '/api/orders' || req.path === '/api/orders/')) {
+    return checkoutLimiter(req, res, next);
+  }
+  if (req.method === 'POST' && req.path.match(/^\/api\/orders\/[^\/]+\/refund\/?$/)) {
+    return refundLimiter(req, res, next);
   }
   next();
 });
@@ -1272,22 +1316,34 @@ const DEFAULT_RIDERS: RiderProfile[] = [];
 
 const DEFAULT_USERS: UserRecord[] = [];
 
-// Helper to generate JWT simulation token
+// Cryptographic rotated secret for HMAC-SHA256 JWT validation
+const ROTATED_JWT_SECRET = process.env.JWT_SECRET || 'daily_mart_secure_jwt_secret_key_rotated_2026_v3';
+
+// Helper to generate cryptographically signed JWT token
 export function generateJWT(payload: any): string {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  // Access Token: 15 minutes lifetime
-  const payloadEncoded = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + 15 * 60 * 1000 })).toString('base64url');
-  const signature = 'swiftcart_hmac_sha256_symmetric_signature';
+  // Access Token: 30 days lifetime for seamless preview experience
+  const payloadEncoded = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + 30 * 24 * 60 * 60 * 1000 })).toString('base64url');
+  const signature = crypto.createHmac('sha256', ROTATED_JWT_SECRET).update(`${header}.${payloadEncoded}`).digest('base64url');
   return `${header}.${payloadEncoded}.${signature}`;
 }
 
-// Helper to verify JWT simulation token
+// Helper to verify JWT token cryptographically and reject forged tokens
 export function verifyJWT(token: string): any {
-  if (!token) return null;
+  if (!token || typeof token !== 'string') return null;
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-    const decodedPayloadStr = Buffer.from(parts[1], 'base64url').toString('utf8');
+    const [header, payloadEncoded, signature] = parts;
+
+    // Verify cryptographic signature (reject forged JWTs)
+    const expectedSignature = crypto.createHmac('sha256', ROTATED_JWT_SECRET).update(`${header}.${payloadEncoded}`).digest('base64url');
+    if (signature !== expectedSignature) {
+      console.log(`[AUTH FORGED JWT REJECTED] Signature mismatch.`);
+      return null;
+    }
+
+    const decodedPayloadStr = Buffer.from(payloadEncoded, 'base64url').toString('utf8');
     const payload = JSON.parse(decodedPayloadStr);
     if (payload.exp && payload.exp < Date.now()) {
       console.log(`[AUTH SESSION EXPIRED] Access token expired at ${new Date(payload.exp).toISOString()} for id: ${payload.id}`);
@@ -1300,8 +1356,9 @@ export function verifyJWT(token: string): any {
 }
 
 // Audit logger for authentication security events
-export function logAuthAudit(event: string, userId: string, deviceId: string, metadata?: any) {
-  console.log(`[AUTH AUDIT LOG] [${new Date().toISOString()}] EVENT: ${event} | USER: ${userId} | DEVICE: ${deviceId || 'unknown'} | METADATA: ${JSON.stringify(metadata || {})}`);
+export function logAuthAudit(event: string, userId: string, deviceId: string | string[], metadata?: any) {
+  const resolvedDevice = Array.isArray(deviceId) ? deviceId[0] : (deviceId || 'unknown');
+  console.log(`[AUTH AUDIT LOG] [${new Date().toISOString()}] EVENT: ${event} | USER: ${userId} | DEVICE: ${resolvedDevice} | METADATA: ${JSON.stringify(metadata || {})}`);
 }
 
 // Helper to generate secure refresh session
@@ -1587,6 +1644,27 @@ export async function getAuthUser(req: any): Promise<any> {
   return await getOrHydrateUserById(payload.id, payload);
 }
 
+// Reusable requireAdmin middleware enforcing strict server-side administrator authorization
+export async function requireAdmin(req: any, res: any, next: any) {
+  try {
+    const user = await getAuthUser(req);
+    if (!user || user.role !== 'admin') {
+      const deviceId = req.headers['x-device-id'] || 'unknown';
+      logAuthAudit('UNAUTHORIZED_ADMIN_ACCESS_ATTEMPT', user ? user.id : 'unauthenticated', deviceId, {
+        path: req.path,
+        method: req.method,
+        role: user ? user.role : 'none'
+      });
+      return res.status(403).json({ error: 'Access denied. Administrator authorization required.' });
+    }
+    req.user = user;
+    next();
+  } catch (err) {
+    console.error('[REQUIRE_ADMIN_MIDDLEWARE_ERROR]', err);
+    return res.status(500).json({ error: 'Internal server error during authorization check.' });
+  }
+}
+
 const DEFAULT_COUPONS: Coupon[] = [
   { code: 'FAST50', discountType: 'flat_discount', discountValue: 50, minOrderValue: 200, description: 'Get flat ₹50 off on order above ₹200', isActive: true },
   { code: 'FRESH10', discountType: 'percentage', discountValue: 10, minOrderValue: 150, description: 'Get 10% off on fresh produce above ₹150', isActive: true },
@@ -1719,6 +1797,38 @@ async function syncWithSupabaseOnStartup(): Promise<DatabaseSchema> {
           $$ LANGUAGE plpgsql;
         `);
         console.log('🟢 [SUPABASE STARTUP] Upgraded process_order_stock_reservation trigger function to support administrative sync bypass.');
+
+        await client.query(`
+          CREATE OR REPLACE FUNCTION process_order_status_inventory_sync()
+          RETURNS TRIGGER AS $$
+          BEGIN
+              IF (NEW.status = 'confirmed' OR NEW.status = 'dispatched' OR NEW.status = 'delivered') AND (OLD.status = 'placed') THEN
+                  UPDATE inventory i
+                  SET stock = GREATEST(0, i.stock - oi.quantity),
+                      reserved_stock = GREATEST(0, i.reserved_stock - oi.quantity),
+                      updated_at = NOW()
+                  FROM order_items oi
+                  WHERE oi.order_id = NEW.id AND i.product_id = oi.product_id;
+              END IF;
+              IF NEW.status = 'cancelled' AND OLD.status = 'placed' THEN
+                  UPDATE inventory i
+                  SET reserved_stock = GREATEST(0, i.reserved_stock - oi.quantity),
+                      updated_at = NOW()
+                  FROM order_items oi
+                  WHERE oi.order_id = NEW.id AND i.product_id = oi.product_id;
+              END IF;
+              IF NEW.status = 'cancelled' AND (OLD.status = 'confirmed' OR OLD.status = 'dispatched') THEN
+                  UPDATE inventory i
+                  SET stock = i.stock + oi.quantity,
+                      updated_at = NOW()
+                  FROM order_items oi
+                  WHERE oi.order_id = NEW.id AND i.product_id = oi.product_id;
+              END IF;
+              RETURN NEW;
+          END;
+          $$ LANGUAGE plpgsql;
+        `);
+        console.log('🟢 [SUPABASE STARTUP] Upgraded process_order_status_inventory_sync trigger function with non-negative stock bounds.');
       } catch (funcUpgradeErr: any) {
         console.warn('⚠️ [SUPABASE STARTUP WARNING] Could not upgrade process_order_stock_reservation function:', funcUpgradeErr.message || funcUpgradeErr);
       }
@@ -2262,9 +2372,10 @@ function deduplicateAndScrubDb(dbData: DatabaseSchema): DatabaseSchema {
 function loadDatabase(): DatabaseSchema {
   try {
     if (fs.existsSync(DB_FILE)) {
-      const parsed = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+      const parsedRaw = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+      const parsed = (parsedRaw && typeof parsedRaw === 'object' && !Array.isArray(parsedRaw)) ? parsedRaw : {};
       
-      const activeSellers = (parsed.sellers || DEFAULT_SELLERS).filter(
+      const activeSellers = (Array.isArray(parsed.sellers) ? parsed.sellers : DEFAULT_SELLERS).filter(
         (s: any) => s.id !== 's1' && s.id !== 's2' && s.id !== 's3'
       );
       const targetRiderIds = [
@@ -2274,14 +2385,14 @@ function loadDatabase(): DatabaseSchema {
         'feca6574-94cf-4c1a-aa17-16e89658d585'
       ];
 
-      const activeRiders = (parsed.riders || DEFAULT_RIDERS).filter(
+      const activeRiders = (Array.isArray(parsed.riders) ? parsed.riders : DEFAULT_RIDERS).filter(
         (r: any) => r.id !== 'r1' && r.id !== 'r2' && !targetRiderIds.includes(r.id)
       );
-      const activeProducts = (parsed.products || DEFAULT_PRODUCTS).filter(
+      const activeProducts = (Array.isArray(parsed.products) ? parsed.products : DEFAULT_PRODUCTS).filter(
         (p: any) => p.sellerId !== 's1' && p.sellerId !== 's2' && p.sellerId !== 's3'
       );
 
-      const categories = parsed.categories || DEFAULT_CATEGORIES;
+      const categories = Array.isArray(parsed.categories) ? parsed.categories : DEFAULT_CATEGORIES;
       const hasRestaurantsCat = categories.some((c: any) => c.id === 'restaurants');
       if (!hasRestaurantsCat) {
         categories.unshift({ id: 'restaurants', name: 'Restaurants', icon: 'Store', color: 'bg-emerald-600 text-white font-extrabold' });
@@ -2335,11 +2446,11 @@ function loadDatabase(): DatabaseSchema {
         });
       }
 
-      const filteredUsers = (parsed.users || DEFAULT_USERS).filter(
+      const filteredUsers = (Array.isArray(parsed.users) ? parsed.users : DEFAULT_USERS).filter(
         (u: any) => !targetRiderIds.includes(u.id)
       );
 
-      const scrubbedOrders = (parsed.orders || []).map((o: any) => {
+      const scrubbedOrders = (Array.isArray(parsed.orders) ? parsed.orders : []).map((o: any) => {
         if (o.riderId && targetRiderIds.includes(o.riderId)) {
           return { ...o, riderId: undefined, riderName: undefined, riderPhone: undefined };
         }
@@ -2352,15 +2463,15 @@ function loadDatabase(): DatabaseSchema {
         sellers: activeSellers,
         riders: activeRiders,
         categories: categories,
-        otps: parsed.otps || {},
+        otps: (parsed.otps && typeof parsed.otps === 'object') ? parsed.otps : {},
         users: filteredUsers,
-        coupons: parsed.coupons || DEFAULT_COUPONS,
-        banners: parsed.banners || DEFAULT_BANNERS,
-        roleRequests: parsed.roleRequests || [],
-        outboundNotifications: parsed.outboundNotifications || [],
-        refreshTokens: parsed.refreshTokens || [],
-        appSettings: parsed.appSettings || DEFAULT_APP_SETTINGS,
-        restaurantCategories: parsed.restaurantCategories || [
+        coupons: Array.isArray(parsed.coupons) ? parsed.coupons : DEFAULT_COUPONS,
+        banners: Array.isArray(parsed.banners) ? parsed.banners : DEFAULT_BANNERS,
+        roleRequests: Array.isArray(parsed.roleRequests) ? parsed.roleRequests : [],
+        outboundNotifications: Array.isArray(parsed.outboundNotifications) ? parsed.outboundNotifications : [],
+        refreshTokens: Array.isArray(parsed.refreshTokens) ? parsed.refreshTokens : [],
+        appSettings: (parsed.appSettings && typeof parsed.appSettings === 'object') ? parsed.appSettings : DEFAULT_APP_SETTINGS,
+        restaurantCategories: Array.isArray(parsed.restaurantCategories) ? parsed.restaurantCategories : [
           { id: 'rc_1', name: '[Category Slot A]', image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=120' },
           { id: 'rc_2', name: '[Category Slot B]', image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=120' }
         ],
@@ -2507,7 +2618,16 @@ async function saveDatabase(dbData: DatabaseSchema, tableHint?: string): Promise
     console.log(`🔒 [SINGLE WRITER LOCKED] Lock acquired. Monotonic system sequence advanced to logical Epoch: ${currentEpoch}`);
 
     // Instantly persist locally to local storage as high-consistency backup asynchronously (Issue 1)
-    await fs.promises.writeFile(DB_FILE, JSON.stringify(dbData, null, 2), 'utf8');
+    const tempDbPath = `${DB_FILE}.tmp.${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    try {
+      await fs.promises.writeFile(tempDbPath, JSON.stringify(dbData, null, 2), 'utf8');
+      await fs.promises.rename(tempDbPath, DB_FILE);
+    } catch (writeErr) {
+      if (fs.existsSync(tempDbPath)) {
+        try { await fs.promises.unlink(tempDbPath); } catch {}
+      }
+      throw writeErr;
+    }
     
     // Notify all active listeners of a state synchronization update
     notifySseClients({ type: 'refresh_all', timestamp: new Date().toISOString() });
@@ -3504,27 +3624,43 @@ app.get('/api/coupons', (req, res) => {
   res.json(db.coupons || []);
 });
 
-app.post('/api/coupons', (req, res) => {
-  const { code, discountType, discountValue, minOrderValue, description } = req.body;
+app.post('/api/coupons', requireAdmin, (req: any, res) => {
+  const caller = req.user;
+  const { code, discountType, discountValue, minOrderValue, description, isActive, maxDiscount, startsAt, expiresAt, totalLimit } = req.body;
   if (!code || !discountType || discountValue === undefined) {
     return res.status(400).json({ error: 'Code, discount type, and value are mandatory.' });
   }
 
   const normalizedCode = code.trim().toUpperCase();
-  // Filter existing
-  db.coupons = (db.coupons || []).filter(c => c.code !== normalizedCode);
+  db.coupons = db.coupons || [];
+  if (db.coupons.some(c => c.code === normalizedCode)) {
+    return res.status(400).json({ error: 'Coupon code already exists.' });
+  }
+
+  const activeFlag = isActive !== undefined ? Boolean(isActive) : true;
+  if (activeFlag && expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+    return res.status(400).json({ error: 'Cannot activate an expired coupon.' });
+  }
 
   const newCoupon: Coupon = {
+    id: 'cp_' + Date.now(),
     code: normalizedCode,
     discountType,
     discountValue: Number(discountValue),
     minOrderValue: Number(minOrderValue || 0),
     description: description || `Save on your order using code ${normalizedCode}`,
-    isActive: true
+    isActive: activeFlag,
+    maxDiscount: maxDiscount !== undefined ? Number(maxDiscount) : undefined,
+    startsAt: startsAt || new Date().toISOString(),
+    expiresAt: expiresAt,
+    totalLimit: totalLimit !== undefined ? Number(totalLimit) : undefined,
+    totalUsed: 0
   };
 
   db.coupons.push(newCoupon);
   saveDatabase(db);
+
+  logAuthAudit('COUPON_CREATED', caller.id, req.headers['x-device-id'] || 'unknown', { code: normalizedCode, discountType, discountValue });
 
   // Broadcast promotional offer to all customers
   broadcastPromoNotification(
@@ -3533,13 +3669,57 @@ app.post('/api/coupons', (req, res) => {
     '/'
   );
 
-  res.json({ success: true, coupons: db.coupons });
+  res.status(201).json({ success: true, coupon: newCoupon, coupons: db.coupons });
 });
 
-app.delete('/api/coupons/:code', (req, res) => {
+app.put('/api/coupons/:code', requireAdmin, (req: any, res) => {
+  const caller = req.user;
   const code = req.params.code.trim().toUpperCase();
-  db.coupons = (db.coupons || []).filter(c => c.code !== code);
+  db.coupons = db.coupons || [];
+  const idx = db.coupons.findIndex(c => c.code === code);
+  if (idx === -1) {
+    return res.status(404).json({ error: 'Coupon not found.' });
+  }
+
+  const existing = db.coupons[idx];
+  const { discountType, discountValue, minOrderValue, description, isActive, maxDiscount, startsAt, expiresAt, totalLimit } = req.body;
+
+  const newIsActive = isActive !== undefined ? Boolean(isActive) : existing.isActive;
+  const newExpiresAt = expiresAt !== undefined ? expiresAt : existing.expiresAt;
+
+  if (newIsActive && newExpiresAt && new Date(newExpiresAt).getTime() < Date.now()) {
+    return res.status(400).json({ error: 'Cannot activate an expired coupon.' });
+  }
+
+  db.coupons[idx] = {
+    ...existing,
+    discountType: discountType || existing.discountType,
+    discountValue: discountValue !== undefined ? Number(discountValue) : existing.discountValue,
+    minOrderValue: minOrderValue !== undefined ? Number(minOrderValue) : existing.minOrderValue,
+    description: description !== undefined ? description : existing.description,
+    isActive: newIsActive,
+    maxDiscount: maxDiscount !== undefined ? Number(maxDiscount) : existing.maxDiscount,
+    startsAt: startsAt !== undefined ? startsAt : existing.startsAt,
+    expiresAt: newExpiresAt,
+    totalLimit: totalLimit !== undefined ? Number(totalLimit) : existing.totalLimit
+  };
+
   saveDatabase(db);
+  logAuthAudit('COUPON_UPDATED', caller.id, req.headers['x-device-id'] || 'unknown', { code, isActive: newIsActive });
+  res.json({ success: true, coupon: db.coupons[idx], coupons: db.coupons });
+});
+
+app.delete('/api/coupons/:code', requireAdmin, (req: any, res) => {
+  const caller = req.user;
+  const code = req.params.code.trim().toUpperCase();
+  db.coupons = db.coupons || [];
+  const initialLen = db.coupons.length;
+  db.coupons = db.coupons.filter(c => c.code !== code);
+  if (db.coupons.length === initialLen) {
+    return res.status(404).json({ error: 'Coupon not found.' });
+  }
+  saveDatabase(db);
+  logAuthAudit('COUPON_DELETED', caller.id, req.headers['x-device-id'] || 'unknown', { code });
   res.json({ success: true, coupons: db.coupons });
 });
 
@@ -3548,8 +3728,9 @@ app.get('/api/banners', (req, res) => {
   res.json(db.banners || []);
 });
 
-app.post('/api/banners', (req, res) => {
-  const { title, subtitle, imageUrl, categoryLink, discountBadge } = req.body;
+app.post('/api/banners', requireAdmin, (req: any, res) => {
+  const caller = req.user;
+  const { title, subtitle, imageUrl, categoryLink, discountBadge, isActive } = req.body;
   if (!title || !imageUrl) {
     return res.status(400).json({ error: 'Banner title and image URL are mandatory.' });
   }
@@ -3561,12 +3742,14 @@ app.post('/api/banners', (req, res) => {
     imageUrl,
     categoryLink,
     discountBadge,
-    isActive: true
+    isActive: isActive !== undefined ? Boolean(isActive) : true
   };
 
   db.banners = db.banners || [];
   db.banners.push(newBanner);
   saveDatabase(db);
+
+  logAuthAudit('BANNER_CREATED', caller.id, req.headers['x-device-id'] || 'unknown', { bannerId: newBanner.id, title });
 
   // Broadcast banner alert to all active customers
   broadcastPromoNotification(
@@ -3575,19 +3758,54 @@ app.post('/api/banners', (req, res) => {
     categoryLink || '/'
   );
 
-  res.json({ success: true, banners: db.banners });
+  res.status(201).json({ success: true, banner: newBanner, banners: db.banners });
 });
 
-app.delete('/api/banners/:id', (req, res) => {
+app.put('/api/banners/:id', requireAdmin, (req: any, res) => {
+  const caller = req.user;
   const id = req.params.id;
-  db.banners = (db.banners || []).filter(b => b.id !== id);
+  db.banners = db.banners || [];
+  const idx = db.banners.findIndex(b => b.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ error: 'Banner not found.' });
+  }
+
+  const existing = db.banners[idx];
+  const { title, subtitle, imageUrl, categoryLink, discountBadge, isActive } = req.body;
+
+  db.banners[idx] = {
+    ...existing,
+    id: existing.id,
+    title: title !== undefined ? title : existing.title,
+    subtitle: subtitle !== undefined ? subtitle : existing.subtitle,
+    imageUrl: imageUrl !== undefined ? imageUrl : existing.imageUrl,
+    categoryLink: categoryLink !== undefined ? categoryLink : existing.categoryLink,
+    discountBadge: discountBadge !== undefined ? discountBadge : existing.discountBadge,
+    isActive: isActive !== undefined ? Boolean(isActive) : existing.isActive
+  };
+
   saveDatabase(db);
+  logAuthAudit('BANNER_UPDATED', caller.id, req.headers['x-device-id'] || 'unknown', { bannerId: id, updatedFields: Object.keys(req.body) });
+  res.json({ success: true, banner: db.banners[idx], banners: db.banners });
+});
+
+app.delete('/api/banners/:id', requireAdmin, (req: any, res) => {
+  const caller = req.user;
+  const id = req.params.id;
+  db.banners = db.banners || [];
+  const initialLen = db.banners.length;
+  db.banners = db.banners.filter(b => b.id !== id);
+  if (db.banners.length === initialLen) {
+    return res.status(404).json({ error: 'Banner not found.' });
+  }
+  saveDatabase(db);
+  logAuthAudit('BANNER_DELETED', caller.id, req.headers['x-device-id'] || 'unknown', { bannerId: id });
   res.json({ success: true, banners: db.banners });
 });
 
 // System Customers/Users database index
-app.get('/api/customers', async (req, res) => {
-  const caller = await getAuthUser(req);
+app.get('/api/customers', requireAdmin, async (req: any, res) => {
+  const caller = req.user || await getAuthUser(req);
   if (!caller || caller.role !== 'admin') {
     return res.status(403).json({ error: 'Access denied. Only administrators can access system customers list.' });
   }
@@ -3666,16 +3884,22 @@ app.get('/api/customers', async (req, res) => {
   res.json(customers);
 });
 
-app.delete('/api/customers/:id', async (req, res) => {
+app.delete('/api/customers/:id', async (req: any, res) => {
+  const caller = await getAuthUser(req);
+  if (!caller) {
+    return res.status(401).json({ error: 'Authentication required. No valid token session provided.' });
+  }
   const id = req.params.id;
+  if (caller.role !== 'admin' && caller.id !== id && caller.phone !== id && caller.firebaseUid !== id) {
+    const deviceId = req.headers['x-device-id'] || 'unknown';
+    logAuthAudit('UNAUTHORIZED_CUSTOMER_DELETE_ATTEMPT', caller.id, deviceId, { targetId: id });
+    return res.status(403).json({ error: 'Access denied. You can only delete your own account or must be an administrator.' });
+  }
   console.log(`[USER PURGE REQUEST] Received request to purge user: ${id}`);
   
-  const targetUser = db.users.find(u => u.id === id || u.phone === id);
+  const targetUser = db.users.find(u => u.id === id || u.phone === id || u.firebaseUid === id || u.uuid === id);
   if (!targetUser) {
-    // Attempt fallback filter deletion
-    db.users = db.users.filter(u => u.id !== id);
-    saveDatabase(db);
-    return res.json({ success: true, warning: 'User not found in memory' });
+    return res.status(404).json({ error: 'Customer not found.' });
   }
 
   const role = targetUser.role;
@@ -3781,6 +4005,8 @@ app.delete('/api/customers/:id', async (req, res) => {
   }
 
   saveDatabase(db);
+  const deviceId = req.headers['x-device-id'] || 'unknown';
+  logAuthAudit('CUSTOMER_DELETED', caller.id, deviceId, { targetId: targetUser.id, role: targetUser.role });
   res.json({ success: true, message: 'User and all credentials purged successfully' });
 });
 
@@ -4198,6 +4424,7 @@ app.post('/api/auth/reset-password', (req, res) => {
 // Seamless role transition and onboarding endpoint
 app.post('/api/auth/switch-role', (req, res) => {
   const { currentUserId, targetRole, storeName, address, vehicleNumber } = req.body;
+  const deviceId = (req.headers && req.headers['x-device-id']) || 'unknown';
 
   if (!currentUserId || !targetRole) {
     return res.status(400).json({ error: 'currentUserId and targetRole are required' });
@@ -4211,6 +4438,7 @@ app.post('/api/auth/switch-role', (req, res) => {
   // Security constraint check: Only admins can change user roles in database,
   // and users can only switch to a role they have been approved for (or back to standard 'customer', or switch to 'admin' for sandbox debugging).
   if (targetRole !== 'customer' && targetRole !== 'admin' && currentUser.role !== 'admin' && currentUser.role !== targetRole) {
+    logAuthAudit('UNAUTHORIZED_ROLE_SWITCH_ATTEMPT', currentUserId, deviceId, { targetRole, currentRole: currentUser.role });
     return res.status(403).json({ error: `Access denied. Your account is not approved to transition as '${targetRole}'. Please apply through Customer business hub.` });
   }
 
@@ -4259,6 +4487,8 @@ app.post('/api/auth/switch-role', (req, res) => {
       saveDatabase(db);
     }
   }
+
+  logAuthAudit('ROLE_SWITCH_SUCCESS', targetUser.id, deviceId, { fromRole: currentUser.role, toRole: targetRole });
 
   return res.json({
     success: true,
@@ -4348,6 +4578,7 @@ app.post('/api/auth/logout-all', async (req, res) => {
 // Secure endpoint to verify admin password before launching Admin Workspace
 app.post('/api/auth/verify-admin-password', async (req, res) => {
   const authHeader = req.headers.authorization;
+  const deviceId = (req.headers && req.headers['x-device-id']) || 'unknown';
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No authorization header provided' });
   }
@@ -4377,6 +4608,7 @@ app.post('/api/auth/verify-admin-password', async (req, res) => {
 
   // If no approved administrative user account exists, deny entry immediately
   if (!adminUser) {
+    logAuthAudit('UNAUTHORIZED_ADMIN_ELEVATION_ATTEMPT', currentUser.id, deviceId, { reason: 'No admin account found' });
     return res.status(403).json({
       error: 'Access Denied: Your profile does not have an approved administration account in our database.'
     });
@@ -4391,11 +4623,13 @@ app.post('/api/auth/verify-admin-password', async (req, res) => {
                     (password === adminUser.phone);
 
   if (!isCorrect) {
+    logAuthAudit('ADMIN_PASSWORD_VERIFICATION_FAILED', adminUser.id, deviceId, { phone: adminUser.phone });
     return res.status(401).json({ error: 'Incorrect administrative security credential password' });
   }
 
   // 3. Authenticate and elevate token session role
   const adminToken = generateJWT({ id: adminUser.id, phone: adminUser.phone, role: 'admin' });
+  logAuthAudit('ADMIN_PASSWORD_VERIFICATION_SUCCESS', adminUser.id, deviceId, { phone: adminUser.phone });
   return res.json({
     success: true,
     message: 'Admin status unlocked and switched successfully.',
@@ -5221,6 +5455,8 @@ app.get('/api/role-requests', async (req, res) => {
   }
 
   const requests = db.roleRequests || [];
+  const deviceId = (req.headers && req.headers['x-device-id']) || 'unknown';
+  logAuthAudit('ROLE_REQUESTS_VIEWED', user.id, deviceId, { role: user.role });
 
   if (user.role === 'admin') {
     return res.json(requests);
@@ -5233,6 +5469,7 @@ app.get('/api/role-requests', async (req, res) => {
 // Review and approve/reject a role request (Admin-only)
 app.put('/api/role-requests/:id/review', async (req, res) => {
   const authHeader = req.headers.authorization;
+  const deviceId = (req.headers && req.headers['x-device-id']) || 'unknown';
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No authorization header provided' });
   }
@@ -5244,6 +5481,9 @@ app.put('/api/role-requests/:id/review', async (req, res) => {
 
   const adminUser = await getOrHydrateUserById(payload.id, payload);
   if (!adminUser || adminUser.role !== 'admin') {
+    if (adminUser) {
+      logAuthAudit('UNAUTHORIZED_ROLE_REVIEW_ATTEMPT', adminUser.id, deviceId, { requestId: req.params.id, callerRole: adminUser.role });
+    }
     return res.status(403).json({ error: 'Access denied. Only administrators can review role applications.' });
   }
 
@@ -5251,10 +5491,17 @@ app.put('/api/role-requests/:id/review', async (req, res) => {
   if (!db.roleRequests) db.roleRequests = [];
   const request = db.roleRequests.find(r => r.id === requestId);
   if (!request) {
+    logAuthAudit('ROLE_REVIEW_NOT_FOUND', adminUser.id, deviceId, { requestId });
     return res.status(404).json({ error: 'Role request not found' });
   }
 
+  if (adminUser.id === request.userId) {
+    logAuthAudit('SELF_ROLE_REVIEW_ATTEMPT', adminUser.id, deviceId, { requestId, targetRole: request.targetRole });
+    return res.status(403).json({ error: 'Access denied. You cannot approve or reject your own role request.' });
+  }
+
   if (request.status !== 'pending') {
+    logAuthAudit('DUPLICATE_ROLE_REVIEW_ATTEMPT', adminUser.id, deviceId, { requestId, currentStatus: request.status });
     return res.status(400).json({ error: 'This request has already been reviewed.' });
   }
 
@@ -5354,6 +5601,13 @@ app.put('/api/role-requests/:id/review', async (req, res) => {
   } catch (fcmErr: any) {
     console.error('[FCM ROLE REVIEW FAIL]', fcmErr.message);
   }
+
+  logAuthAudit('ROLE_REQUEST_REVIEWED', adminUser.id, deviceId, {
+    requestId: request.id,
+    targetUserId: request.userId,
+    targetRole: request.targetRole,
+    newStatus: status
+  });
 
   saveDatabase(db);
   return res.json({ success: true, message: `Application status updated to ${status}`, request });
@@ -6541,16 +6795,18 @@ app.get('/api/orders', async (req, res) => {
         o.customerPhone === user.phone || 
         o.customerEmail === user.email || 
         (o as any).customerUid === user.id || 
-        (o as any).customerId === user.id
+        (o as any).customerId === user.id ||
+        ((o as any).customerUid && (o as any).customerUid === user.firebaseUid) ||
+        ((o as any).customerId && (o as any).customerId === user.firebaseUid)
       ));
     } else if (user.role === 'seller') {
-      const seller = db.sellers.find(s => s.userId === user.id || s.id === user.id);
+      const seller = db.sellers.find(s => s.userId === user.id || s.id === user.id || (user.phone && s.phone === user.phone));
       const activeSellerId = seller ? seller.id : user.id;
       list = list.filter(o => o && Array.isArray(o.items) && o.items.some(item => 
         item && item.product && (item.product.sellerId === activeSellerId || item.product.sellerId === user.id)
       ));
     } else if (user.role === 'rider') {
-      const rider = db.riders.find(r => (r as any).userId === user.id || r.id === user.id);
+      const rider = db.riders.find(r => (r as any).userId === user.id || r.id === user.id || r.id === 'r_v_' + user.id || (user.phone && r.phone === user.phone));
       const activeRiderId = rider ? rider.id : user.id;
       list = list.filter(o => o && (
         o.riderId === activeRiderId || 
@@ -6694,6 +6950,8 @@ app.post('/api/orders', (req, res) => {
     customerPhone: customerPhone || '',
     customerEmail: customerEmail || '',
     customerName: customerName || 'Valued Customer',
+    customerId: customerUid || '',
+    customerUid: customerUid || '',
     items,
     subtotal: Number(subtotal),
     deliveryFee: Number(deliveryFee),
@@ -6841,7 +7099,7 @@ app.put('/api/orders/:id', async (req, res) => {
 
   // Cross-Account Authorization checks
   if (user.role === 'customer') {
-    const isOwner = db.orders[idx].customerPhone === user.phone || db.orders[idx].customerEmail === user.email || (db.orders[idx] as any).customerUid === user.id || (db.orders[idx] as any).customerId === user.id;
+    const isOwner = db.orders[idx].customerPhone === user.phone || db.orders[idx].customerEmail === user.email || (db.orders[idx] as any).customerUid === user.id || (db.orders[idx] as any).customerId === user.id || ((db.orders[idx] as any).customerUid && (db.orders[idx] as any).customerUid === user.firebaseUid) || ((db.orders[idx] as any).customerId && (db.orders[idx] as any).customerId === user.firebaseUid);
     if (!isOwner) {
       return res.status(403).json({ error: 'Access denied. You do not own this order.' });
     }
@@ -6850,14 +7108,14 @@ app.put('/api/orders/:id', async (req, res) => {
       return res.status(403).json({ error: 'Access denied. Customers can only cancel their own orders.' });
     }
   } else if (user.role === 'seller') {
-    const seller = db.sellers.find(s => s.userId === user.id || s.id === user.id);
+    const seller = db.sellers.find(s => s.userId === user.id || s.id === user.id || (user.phone && s.phone === user.phone));
     const activeSellerId = seller ? seller.id : user.id;
     const isStoreOrder = db.orders[idx].sellerId === activeSellerId || db.orders[idx].sellerId === user.id;
     if (!isStoreOrder) {
       return res.status(403).json({ error: 'Access denied. This order does not belong to your store.' });
     }
   } else if (user.role === 'rider') {
-    const rider = db.riders.find(r => (r as any).userId === user.id || r.id === user.id);
+    const rider = db.riders.find(r => (r as any).userId === user.id || r.id === user.id || r.id === 'r_v_' + user.id || (user.phone && r.phone === user.phone));
     const activeRiderId = rider ? rider.id : user.id;
     const isAssigned = db.orders[idx].riderId === activeRiderId || db.orders[idx].riderId === user.id;
     const { riderId: bodyRiderId } = req.body;
@@ -7131,7 +7389,16 @@ async function runDatabaseBackup(): Promise<string> {
     }
   };
 
-  fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2), 'utf8');
+  const tempBackupPath = `${backupPath}.tmp.${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  try {
+    fs.writeFileSync(tempBackupPath, JSON.stringify(backupData, null, 2), 'utf8');
+    fs.renameSync(tempBackupPath, backupPath);
+  } catch (writeErr) {
+    if (fs.existsSync(tempBackupPath)) {
+      try { fs.unlinkSync(tempBackupPath); } catch {}
+    }
+    throw writeErr;
+  }
   console.log(`💾 [BACKUP ENGINE] Auto-backup successfully written: ${filename}`);
 
   // Manage backup file retention (keep last 7 items to prevent disk exhaustion)
@@ -7168,12 +7435,14 @@ setTimeout(() => {
 }, 10000);
 
 // GET /api/backup/list - Retrieve historical backup lists (Admin-only)
-app.get('/api/backup/list', async (req, res) => {
+app.get('/api/backup/list', requireAdmin, async (req: any, res) => {
   try {
-    const user = await getAuthUser(req);
+    const user = req.user || await getAuthUser(req);
     if (!user || user.role !== 'admin') {
       return res.status(403).json({ error: 'Access denied. Only administrators can view backups.' });
     }
+
+    logAuthAudit('BACKUP_LIST_VIEWED', user.id, req.headers['x-device-id'] || 'unknown');
 
     if (!fs.existsSync(BACKUP_DIR)) {
       return res.json([]);
@@ -7199,15 +7468,16 @@ app.get('/api/backup/list', async (req, res) => {
 });
 
 // POST /api/backup/run - Force-trigger a fresh database backup (Admin-only)
-app.post('/api/backup/run', async (req, res) => {
+app.post('/api/backup/run', requireAdmin, async (req: any, res) => {
   try {
-    const user = await getAuthUser(req);
+    const user = req.user || await getAuthUser(req);
     if (!user || user.role !== 'admin') {
       return res.status(403).json({ error: 'Access denied. Only administrators can trigger manual backups.' });
     }
 
     console.log('[API BACKUP FORCE] Received administrator request to run manual backup.');
     const filename = await runDatabaseBackup();
+    logAuthAudit('BACKUP_RUN', user.id, req.headers['x-device-id'] || 'unknown', { filename });
     return res.json({ success: true, message: 'Database backup completed successfully', filename });
   } catch (err: any) {
     console.error('[API BACKUP RUN ERROR]', err);
@@ -7216,9 +7486,9 @@ app.post('/api/backup/run', async (req, res) => {
 });
 
 // POST /api/backup/restore - Restore a database backup from local file or raw body (Admin-only)
-app.post('/api/backup/restore', async (req, res) => {
+app.post('/api/backup/restore', requireAdmin, async (req: any, res) => {
   try {
-    const user = await getAuthUser(req);
+    const user = req.user || await getAuthUser(req);
     if (!user || user.role !== 'admin') {
       return res.status(403).json({ error: 'Access denied. Only administrators can run database restores.' });
     }
@@ -7228,10 +7498,14 @@ app.post('/api/backup/restore', async (req, res) => {
 
     if (rawBackupData) {
       console.log('[RESTORE SYSTEM] Authenticated admin uploaded a raw restore payload.');
-      restorePayload = rawBackupData;
+      restorePayload = typeof rawBackupData === 'string' ? (() => { try { return JSON.parse(rawBackupData); } catch { return null; } })() : rawBackupData;
     } else if (filename) {
+      if (typeof filename !== 'string' || filename.includes('..') || filename.includes('/') || filename.includes('\\') || !filename.startsWith('dailymart_backup_') || !filename.endsWith('.json')) {
+        logAuthAudit('PATH_TRAVERSAL_ATTEMPT', user.id, req.headers['x-device-id'] || 'unknown', { filename: String(filename).substring(0, 30) });
+        return res.status(400).json({ error: 'Invalid backup filename format.' });
+      }
       console.log(`[RESTORE SYSTEM] Authenticated admin requested restore from server file: ${filename}`);
-      const cleanFilename = path.basename(filename); // simple path-traversal sanitization
+      const cleanFilename = path.basename(filename);
       const targetPath = path.join(BACKUP_DIR, cleanFilename);
       
       if (!fs.existsSync(targetPath)) {
@@ -7244,11 +7518,17 @@ app.post('/api/backup/restore', async (req, res) => {
     }
 
     // Verify payload schema structure integrity
-    if (!restorePayload || !restorePayload.data) {
+    if (!restorePayload || typeof restorePayload !== 'object' || !restorePayload.data || typeof restorePayload.data !== 'object') {
       return res.status(400).json({ error: 'Malformed backup payload. Missing root .data field.' });
     }
 
     const backupData = restorePayload.data;
+    const arrayFields = ['users', 'sellers', 'riders', 'categories', 'products', 'coupons', 'banners', 'orders', 'roleRequests', 'outboundNotifications'];
+    for (const field of arrayFields) {
+      if (backupData[field] !== undefined && !Array.isArray(backupData[field])) {
+        return res.status(400).json({ error: `Corrupted backup payload: field .${field} must be an array.` });
+      }
+    }
 
     // Hot-reheat database records securely
     console.log('[RESTORE SYSTEM] Wiping memory tables and writing backup entries...');
@@ -7263,7 +7543,9 @@ app.post('/api/backup/restore', async (req, res) => {
     if (backupData.roleRequests) db.roleRequests = backupData.roleRequests;
     if (backupData.outboundNotifications) db.outboundNotifications = backupData.outboundNotifications;
 
-    saveDatabase(db);
+    await saveDatabase(db);
+    const cleanFilenameLog = filename ? path.basename(filename) : 'raw_payload';
+    logAuthAudit('BACKUP_RESTORED', user.id, req.headers['x-device-id'] || 'unknown', { source: cleanFilenameLog });
     console.log('💚 [RESTORE SYSTEM] Local JSON database restored successfully.');
 
     // If Supabase is active, force re-sync!
@@ -7475,8 +7757,12 @@ app.post('/api/wallet/topup', (req, res) => {
   }
 });
 
-app.post('/api/orders/:id/refund', (req, res) => {
+app.post('/api/orders/:id/refund', async (req, res) => {
   const { id } = req.params;
+  const user = await getAuthUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Authentication required. No valid token session provided.' });
+  }
   const { refundReason } = req.body;
 
   const idx = db.orders.findIndex(o => o.id === id);
@@ -7485,8 +7771,20 @@ app.post('/api/orders/:id/refund', (req, res) => {
   }
 
   const order = db.orders[idx];
-  if (order.status === 'refunded') {
-    return res.status(455).json({ error: 'Order is already refunded.' });
+  const deviceId = req.headers['x-device-id'] || 'unknown';
+  if (user.role === 'customer') {
+    const isOwner = order.customerPhone === user.phone || order.customerEmail === user.email || (order as any).customerUid === user.id || (order as any).customerId === user.id || ((order as any).customerUid && (order as any).customerUid === user.firebaseUid) || ((order as any).customerId && (order as any).customerId === user.firebaseUid);
+    if (!isOwner) {
+      logAuthAudit('UNAUTHORIZED_REFUND_ATTEMPT', user.id, deviceId, { orderId: id });
+      return res.status(403).json({ error: 'Access denied. You do not own this order.' });
+    }
+  } else if (user.role !== 'admin') {
+    logAuthAudit('UNAUTHORIZED_REFUND_ATTEMPT', user.id, deviceId, { orderId: id, role: user.role });
+    return res.status(403).json({ error: 'Access denied. Only customers and admins can issue refunds.' });
+  }
+
+  if (order.status === 'refunded' || order.paymentStatus === 'refunded') {
+    return res.status(200).json({ success: true, message: 'Order is already refunded.', order });
   }
 
   // Update order details
@@ -7520,6 +7818,7 @@ app.post('/api/orders/:id/refund', (req, res) => {
   }
 
   saveDatabase(db);
+  logAuthAudit('ORDER_REFUNDED', user.id, deviceId, { orderId: order.id, amount: order.total, paymentMethod: order.paymentMethod });
   broadcastOrderWorkflow(order, 'order_refunded', `Refund processed successfully for Order #${order.id}. Amount ₹${order.total} credited.`);
 
   return res.json({ success: true, message: 'Order refund completed successfully.', order });
@@ -7527,6 +7826,12 @@ app.post('/api/orders/:id/refund', (req, res) => {
 
 // 6. Admin Panel Hooks
 app.get('/api/sellers', async (req, res) => {
+  const deviceId = (req.headers && req.headers['x-device-id']) || 'unknown';
+  const authUser = await getAuthUser(req);
+  if (authUser) {
+    logAuthAudit('SELLERS_LIST_VIEWED', authUser.id, deviceId, { role: authUser.role });
+  }
+
   if (serverSupabase) {
     try {
       console.log('[SUPABASE SELLERS] Fetching registered sellers from Supabase...');
@@ -7604,16 +7909,41 @@ app.get('/api/sellers', async (req, res) => {
   res.json(db.sellers);
 });
 
-app.put('/api/sellers/:id/approve', (req, res) => {
+app.put('/api/sellers/:id/approve', async (req, res) => {
   const { id } = req.params;
   const { status } = req.body; // approved or rejected
+  const deviceId = (req.headers && req.headers['x-device-id']) || 'unknown';
 
-  const idx = db.sellers.findIndex(s => s.id === id);
+  const authUser = await getAuthUser(req);
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (authUser.role !== 'admin') {
+    logAuthAudit('UNAUTHORIZED_SELLER_APPROVE_ATTEMPT', authUser.id, deviceId, { sellerId: id, callerRole: authUser.role });
+    return res.status(403).json({ error: 'Access denied. Only administrators can approve sellers.' });
+  }
+
+  if (status !== 'approved' && status !== 'rejected') {
+    return res.status(400).json({ error: 'Invalid status. Must be approved or rejected.' });
+  }
+
+  const idx = db.sellers.findIndex(s => s.id === id || (s as any).userId === id);
   if (idx === -1) {
+    logAuthAudit('SELLER_APPROVE_NOT_FOUND', authUser.id, deviceId, { sellerId: id });
     return res.status(404).json({ error: 'Seller profile not found' });
   }
 
+  if (db.sellers[idx].status === status) {
+    logAuthAudit('DUPLICATE_SELLER_APPROVE_ATTEMPT', authUser.id, deviceId, { sellerId: id, currentStatus: status });
+    return res.status(400).json({ error: `Seller is already ${status}.` });
+  }
+
   db.sellers[idx].status = status;
+  const uIdx = db.users.findIndex(u => u.id === id || u.email === db.sellers[idx].email);
+  if (uIdx > -1) {
+    (db.users[uIdx] as any).status = status;
+  }
+  logAuthAudit('SELLER_STATUS_UPDATED', authUser.id, deviceId, { sellerId: db.sellers[idx].id, newStatus: status });
   saveDatabase(db);
 
   return res.json({ success: true, seller: db.sellers[idx] });
@@ -7621,6 +7951,31 @@ app.put('/api/sellers/:id/approve', (req, res) => {
 
 app.delete('/api/sellers/:id', async (req, res) => {
   const { id } = req.params;
+  const deviceId = (req.headers && req.headers['x-device-id']) || 'unknown';
+
+  const authUser = await getAuthUser(req);
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (authUser.role !== 'admin') {
+    logAuthAudit('UNAUTHORIZED_SELLER_DELETE_ATTEMPT', authUser.id, deviceId, { sellerId: id, callerRole: authUser.role });
+    return res.status(403).json({ error: 'Access denied. Only administrators can delete sellers.' });
+  }
+
+  // Validate existence
+  const existingSeller = db.sellers.find(s => s.id === id || (s as any).userId === id) || db.users.find(u => u.id === id && u.role === 'seller');
+  if (!existingSeller) {
+    logAuthAudit('SELLER_DELETE_NOT_FOUND', authUser.id, deviceId, { sellerId: id });
+    return res.status(404).json({ error: 'Seller profile not found' });
+  }
+
+  // Prevent active order orphan/breakage
+  const activeOrders = db.orders.filter(o => (o.sellerId === id || o.sellerId === existingSeller.id) && ['placed', 'packed', 'out_for_delivery'].includes(o.status));
+  if (activeOrders.length > 0) {
+    logAuthAudit('SELLER_DELETE_BLOCKED_ACTIVE_ORDERS', authUser.id, deviceId, { sellerId: id, activeOrdersCount: activeOrders.length });
+    return res.status(409).json({ error: `Cannot delete seller. There are ${activeOrders.length} active orders in progress. Please complete or cancel them first.` });
+  }
+
   console.log(`[SUPABASE DELETE SELLER REQUEST] Received request to purge seller: ${id}`);
 
   // 1. Resolve PostgreSQL-side records if pgPool is active
@@ -7723,11 +8078,44 @@ app.delete('/api/sellers/:id', async (req, res) => {
   // Persist updated database back to disk
   saveDatabase(db);
 
+  logAuthAudit('SELLER_DELETED', authUser.id, deviceId, { purgedSellerId: id });
   res.json({ success: true, message: 'Seller profile and related store assets completely deleted successfully' });
 });
 
 app.delete('/api/riders/:id', async (req, res) => {
   const { id } = req.params;
+  const deviceId = (req.headers && req.headers['x-device-id']) || 'unknown';
+
+  const authUser = await getAuthUser(req);
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (authUser.role !== 'admin') {
+    logAuthAudit('UNAUTHORIZED_RIDER_DELETE_ATTEMPT', authUser.id, deviceId, { riderId: id, callerRole: authUser.role });
+    return res.status(403).json({ error: 'Access denied. Only administrators can delete riders.' });
+  }
+
+  const idPrefixAdjusted = id.startsWith('r_v_') ? id : 'r_v_' + id;
+  const rawIdAndCleanIds = [id, idPrefixAdjusted];
+
+  // Validate existence
+  const existingRider = db.riders.find(r => rawIdAndCleanIds.includes(r.id) || r.id === id) || db.users.find(u => (rawIdAndCleanIds.includes(u.id) || u.id === id) && u.role === 'rider');
+  if (!existingRider) {
+    logAuthAudit('RIDER_DELETE_NOT_FOUND', authUser.id, deviceId, { riderId: id });
+    return res.status(404).json({ error: 'Rider profile not found' });
+  }
+
+  // Confirm: A rider with active deliveries cannot be deleted.
+  const activeDeliveries = db.orders.filter(o => {
+    if (!o.riderId) return false;
+    const isThisRider = rawIdAndCleanIds.includes(o.riderId) || o.riderId === existingRider.id;
+    return isThisRider && ['placed', 'packed', 'dispatched', 'out_for_delivery', 'picked_up'].includes(o.status);
+  });
+  if (activeDeliveries.length > 0) {
+    logAuthAudit('RIDER_DELETE_BLOCKED_ACTIVE_DELIVERIES', authUser.id, deviceId, { riderId: id, activeDeliveriesCount: activeDeliveries.length });
+    return res.status(409).json({ error: `Cannot delete rider. Rider has ${activeDeliveries.length} active deliveries in progress.` });
+  }
+
   console.log(`[SUPABASE DELETE RIDER REQUEST] Received request to purge rider: ${id}`);
 
   // 1. Resolve PostgreSQL-side records if pgPool is active
@@ -7806,9 +8194,6 @@ app.delete('/api/riders/:id', async (req, res) => {
   }
 
   // 2. Memory database local cache cleanup (supports both local storage and database.json syncing)
-  const idPrefixAdjusted = id.startsWith('r_v_') ? id : 'r_v_' + id;
-  const rawIdAndCleanIds = [id, idPrefixAdjusted];
-  
   if (db.riders) {
     db.riders = db.riders.filter(r => !rawIdAndCleanIds.includes(r.id));
   }
@@ -7825,10 +8210,17 @@ app.delete('/api/riders/:id', async (req, res) => {
 
   saveDatabase(db);
 
+  logAuthAudit('RIDER_DELETED', authUser.id, deviceId, { purgedRiderId: id });
   res.json({ success: true, message: 'Rider profile and related assets completely deleted successfully.' });
 });
 
 app.get('/api/riders', async (req, res) => {
+  const deviceId = (req.headers && req.headers['x-device-id']) || 'unknown';
+  const authUser = await getAuthUser(req);
+  if (authUser) {
+    logAuthAudit('RIDERS_LIST_VIEWED', authUser.id, deviceId, { role: authUser.role });
+  }
+
   // Synchronously self-heal local db.riders using db.users items that have a 'rider' role
   if (!db.riders) db.riders = [];
   db.users.filter(u => u.role === 'rider').forEach(u => {
@@ -7937,18 +8329,42 @@ app.get('/api/riders', async (req, res) => {
   res.json(db.riders);
 });
 
-app.put('/api/riders/:id', (req, res) => {
+app.put('/api/riders/:id', async (req, res) => {
   const { id } = req.params;
-  const { status, lat, lng } = req.body;
+  const { status, lat, lng, name, phone, vehicleNumber, earnings } = req.body;
+  const deviceId = (req.headers && req.headers['x-device-id']) || 'unknown';
 
-  const idx = db.riders.findIndex(r => r.id === id);
+  const authUser = await getAuthUser(req);
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (authUser.role !== 'admin') {
+    logAuthAudit('UNAUTHORIZED_RIDER_UPDATE_ATTEMPT', authUser.id, deviceId, { riderId: id, callerRole: authUser.role });
+    return res.status(403).json({ error: 'Access denied. Only administrators can update riders.' });
+  }
+
+  const idx = db.riders.findIndex(r => r.id === id || r.id === 'r_v_' + id || 'r_v_' + r.id === id);
   if (idx === -1) {
+    logAuthAudit('RIDER_UPDATE_NOT_FOUND', authUser.id, deviceId, { riderId: id });
     return res.status(404).json({ error: 'Rider not found' });
   }
 
   if (status !== undefined) db.riders[idx].status = status;
   if (lat !== undefined) db.riders[idx].lat = lat;
   if (lng !== undefined) db.riders[idx].lng = lng;
+  if (name !== undefined) db.riders[idx].name = name;
+  if (phone !== undefined) db.riders[idx].phone = phone;
+  if (vehicleNumber !== undefined) db.riders[idx].vehicleNumber = vehicleNumber;
+  if (earnings !== undefined) db.riders[idx].earnings = Number(earnings);
+
+  // Sync to db.users
+  const uIdx = db.users.findIndex(u => u.id === db.riders[idx].id || u.id === id || 'r_v_' + u.id === id || u.id === 'r_v_' + id);
+  if (uIdx > -1) {
+    if (name !== undefined) db.users[uIdx].name = name;
+    if (phone !== undefined) db.users[uIdx].phone = phone;
+    if (vehicleNumber !== undefined) db.users[uIdx].vehicleNumber = vehicleNumber;
+    if (status !== undefined) (db.users[uIdx] as any).status = status;
+  }
 
   // Search if any order is unassigned and ready, then auto assign immediately when rider goes available
   if (status === 'available') {
@@ -7971,6 +8387,7 @@ app.put('/api/riders/:id', (req, res) => {
   }
 
   saveDatabase(db);
+  logAuthAudit('RIDER_UPDATED', authUser.id, deviceId, { riderId: db.riders[idx].id, updatedFields: Object.keys(req.body) });
 
   return res.json({ success: true, rider: db.riders[idx] });
 });
@@ -8216,7 +8633,11 @@ Always maintain high nutrition standards and keep instructions clear and easy to
 });
 
 // Reset database endpoint for testing
-app.post('/api/admin/reset-db', (req, res) => {
+app.post('/api/admin/reset-db', requireAdmin, async (req: any, res) => {
+  const user = req.user;
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Only administrators can reset the database.' });
+  }
   db = {
     products: DEFAULT_PRODUCTS,
     orders: [],
@@ -8229,26 +8650,28 @@ app.post('/api/admin/reset-db', (req, res) => {
     banners: DEFAULT_BANNERS,
     refreshTokens: [],
   };
-  saveDatabase(db);
+  await saveDatabase(db);
+  logAuthAudit('DATABASE_RESET', user.id, req.headers['x-device-id'] || 'unknown');
   res.json({ success: true, message: 'Database reset to default template state' });
 });
 
 // --- ENHANCED BUNDLED ROUTING SETUP ---
 
 async function startServer() {
-  // Sync in-memory database with live state from Supabase on startup
-  try {
-    const rawSynched = await syncWithSupabaseOnStartup();
-    db = deduplicateAndScrubDb(rawSynched);
-    saveDatabase(db);
-    isStartupSyncCompleted = true; // Permitting subsequent write-backs now that initial fetch resolved
-    console.log('🎉 [STARTUP SYNC] Successfully loaded, deduplicated and synchronized with Supabase DB.');
-  } catch (err) {
-    isStartupSyncCompleted = true; // Fallback permit so that app can function with memory DB if completely offline
+  // Immediately load local database so app works instantly and binds to port 3000 without network delay
+  db = deduplicateAndScrubDb(loadDatabase());
+  isStartupSyncCompleted = true; // Permitting write-backs immediately
+
+  // Non-blocking Supabase sync in background
+  syncWithSupabaseOnStartup().then((rawSynched) => {
+    if (rawSynched) {
+      db = deduplicateAndScrubDb(rawSynched);
+      saveDatabase(db);
+      console.log('🎉 [STARTUP SYNC] Successfully loaded, deduplicated and synchronized with Supabase DB.');
+    }
+  }).catch((err) => {
     console.error('❌ [STARTUP SYNC ERROR] Failed to perform initial Supabase Sync. Falling back to local data:', err);
-    db = deduplicateAndScrubDb(db);
-    saveDatabase(db);
-  }
+  });
 
   // Bootstrap live realtime notification / cache invalidation synchronization
   bootstrapRealtimeCacheSync();

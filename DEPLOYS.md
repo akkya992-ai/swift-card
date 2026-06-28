@@ -1,6 +1,6 @@
-# 🚀 Swift Cart - Production Deployment Guide
+# 🚀 Daily Mart - Production Deployment Guide
 
-This guide details the complete, step-by-step roadmap to deploy **Swift Cart** as a high-performance, real-time, production-ready Full-stack application.
+This guide details the complete, step-by-step roadmap to deploy **Daily Mart** as a high-performance, real-time, production-ready Full-stack application.
 
 ---
 
@@ -30,7 +30,7 @@ Supabase serves as the persistent relational engine, powering real-time order tr
 
 ### Step A: Provision Database & Tables
 1. Go to the [Supabase Dashboard](https://supabase.com/) and create a new project.
-2. Select your geographical region and project name (`swift-cart-backend`).
+2. Select your geographical region and project name (`daily-mart-backend`).
 3. Click on the **SQL Editor** tab from the left sidebar.
 4. Paste the entire content of [`schema.sql`](/schema.sql) into a new SQL query worksheet.
 5. Click **Run** to execute the queries. This provisions the core Postgres types, indexes, and stock-lock transaction triggers.
@@ -51,7 +51,7 @@ Navigate to **Project Settings** -> **API**:
 Vercel provides static content deployment channels, asset compression, edge caching, and CDN optimization for the client bundle.
 
 ### Step A: Connect Repository
-1. Push your Swift Cart codebase to a private/public GitHub repository.
+1. Push your Daily Mart codebase to a private/public GitHub repository.
 2. Visit the [Vercel Dashboard](https://vercel.com/) and click **Add New Project**.
 3. Import your GitHub repository.
 
@@ -72,7 +72,7 @@ Add the following key-value configurations inside **Vercel Project Settings** ->
 
 ## 🧠 4. Dedicated Backend API Deployment (Railway / Render / Cloud Run)
 
-Since Swift Cart features an Express server (`server.ts`) to handle Gemini AI, cart proxies, and orders state, you should deploy the Node.js server container to a cloud host.
+Since Daily Mart features an Express server (`server.ts`) to handle Gemini AI, cart proxies, and orders state, you should deploy the Node.js server container to a cloud host.
 
 ### Step A: Configure package.json
 Verify that your scripts in `package.json` list:

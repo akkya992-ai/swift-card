@@ -58,6 +58,8 @@ export interface Order {
   customerPhone?: string;
   customerEmail?: string;
   customerName?: string;
+  customerId?: string;
+  customerUid?: string;
   items: CartItem[];
   subtotal: number;
   deliveryFee: number;

@@ -393,6 +393,17 @@ export const applyGlobalNetworkingInterceptors = () => {
       }
     }
 
+    let finalInit = init ? { ...init } : {};
+    try {
+      if (typeof localStorage !== 'undefined' && resolvedUrl.includes('/api/')) {
+        const savedToken = localStorage.getItem('swiftcart_jwt_token');
+        if (savedToken && !reqHeadersObj['Authorization'] && !reqHeadersObj['authorization']) {
+          reqHeadersObj['Authorization'] = `Bearer ${savedToken}`;
+          finalInit.headers = reqHeadersObj;
+        }
+      }
+    } catch {}
+
     console.log(`[NETWORK_DIAGNOSTICS OUTGOING]`);
     console.log(`• URL: ${resolvedUrl}`);
     console.log(`• Method: ${method}`);
@@ -411,17 +422,17 @@ export const applyGlobalNetworkingInterceptors = () => {
     if (resolvedUrl !== originalUrl) {
       addDiagEntry('info', `🛰️ [FETCH RE-ROUTE] ${originalUrl} -> ${resolvedUrl}`);
       if (typeof input === 'string') {
-        requestPromise = originalFetch(resolvedUrl, init);
+        requestPromise = originalFetch(resolvedUrl, finalInit);
       } else {
         try {
           const newReq = new Request(resolvedUrl, input as any);
-          requestPromise = originalFetch(newReq, init);
+          requestPromise = originalFetch(newReq, finalInit);
         } catch (e: any) {
-          requestPromise = originalFetch(resolvedUrl, init);
+          requestPromise = originalFetch(resolvedUrl, finalInit);
         }
       }
     } else {
-      requestPromise = originalFetch(input, init);
+      requestPromise = originalFetch(input, finalInit);
     }
 
     return requestPromise.then((response) => {

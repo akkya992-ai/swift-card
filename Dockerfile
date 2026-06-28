@@ -25,6 +25,8 @@ RUN npm ci --only=production
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/database.json ./database.json
+COPY --from=builder /app/src/assets ./src/assets
+COPY --from=builder /app/firebase-applet-config*.json ./
 
 EXPOSE 3000
 

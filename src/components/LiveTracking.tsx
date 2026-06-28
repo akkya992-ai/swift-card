@@ -39,6 +39,7 @@ export default function LiveTracking({
   const [cancelReason, setCancelReason] = useState('Ordered wrong items or size');
   const [isCancelling, setIsCancelling] = useState(false);
   const [showQrLive, setShowQrLive] = useState(true);
+  const [cancelError, setCancelError] = useState('');
 
   // Chat tracking states and quick responses
   const [riderMessage, setRiderMessage] = useState<string>('');
@@ -122,10 +123,13 @@ export default function LiveTracking({
 
       onBack();
     } catch (err: any) {
-      alert(err.message || 'Error occurred during cancellation.');
+      const msg = err.message || 'Error occurred during cancellation.';
+      if (triggerNotification) {
+        triggerNotification('Cancellation Failed', msg, 'warning');
+      }
+      setCancelError(msg);
     } finally {
       setIsCancelling(false);
-      setShowCancelConfirm(false);
     }
   };
 
@@ -474,7 +478,10 @@ export default function LiveTracking({
               {!showCancelConfirm ? (
                 <button
                   type="button"
-                  onClick={() => setShowCancelConfirm(true)}
+                  onClick={() => {
+                    setCancelError('');
+                    setShowCancelConfirm(true);
+                  }}
                   className="w-full py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-[11px] rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer border border-rose-100/65 uppercase tracking-wide"
                 >
                   🗑️ Cancel Purchase & Refund to Wallet
@@ -505,6 +512,12 @@ export default function LiveTracking({
                       <option value="Other / Support case">Other support issue</option>
                     </select>
                   </div>
+
+                  {cancelError && (
+                    <div className="p-2 bg-rose-100/80 border border-rose-200 rounded-xl text-rose-800 text-[11px] font-bold text-center">
+                      {cancelError}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-2 text-[10px] font-black uppercase">
                     <button
