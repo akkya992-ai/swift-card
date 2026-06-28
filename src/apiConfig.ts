@@ -53,6 +53,7 @@ export const getIsCapacitor = (): boolean => {
 // Self-healing legacy local storage cleanup block has been bypassed to allow development testing in local APK WebView.
 
 export const CANDIDATE_BACKENDS = [
+  'https://swift-cart-700512652396.asia-southeast1.run.app',
   'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app',
   'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app'
 ];
@@ -184,8 +185,8 @@ export const getApiBase = (): string => {
   // 5. Fallback to Cloud Run backend URL
   // For native platforms we default to our persistent workspace app domain to ensure local changes sync instantly.
   const fallbackUrl = getIsCapacitor()
-    ? 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app'
-    : (typeof window !== 'undefined' ? window.location.origin : 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
+    ? 'https://swift-cart-700512652396.asia-southeast1.run.app'
+    : (typeof window !== 'undefined' ? window.location.origin : 'https://swift-cart-700512652396.asia-southeast1.run.app');
   logConfigState(fallbackUrl, 'Default Fallback (Cloud Run backend)');
   return fallbackUrl;
 };

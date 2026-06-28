@@ -1681,7 +1681,7 @@ const DEFAULT_APP_SETTINGS: AppSettingsRecord = {
   latestVersion: '1.2.0',
   minimumSupportedVersion: '1.0.0',
   forceUpdate: false,
-  apkUrl: 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk',
+  apkUrl: 'https://swift-cart-700512652396.asia-southeast1.run.app/apk/dailymart.apk',
   releaseNotes: 'Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.'
 };
 
@@ -1924,7 +1924,7 @@ async function syncWithSupabaseOnStartup(): Promise<DatabaseSchema> {
             latest_version VARCHAR(50) NOT NULL DEFAULT '1.2.0',
             minimum_supported_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
             force_update BOOLEAN NOT NULL DEFAULT FALSE,
-            apk_download_url TEXT NOT NULL DEFAULT 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk',
+            apk_download_url TEXT NOT NULL DEFAULT 'https://swift-cart-700512652396.asia-southeast1.run.app/apk/dailymart.apk',
             release_notes TEXT NOT NULL DEFAULT 'Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.',
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
           );
@@ -1935,7 +1935,7 @@ async function syncWithSupabaseOnStartup(): Promise<DatabaseSchema> {
         if (parseInt(settingsRows[0].count) === 0) {
           await client.query(`
             INSERT INTO app_settings (id, latest_version, minimum_supported_version, force_update, apk_download_url, release_notes)
-            VALUES ('default', '1.2.0', '1.0.0', FALSE, 'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk', 'Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.')
+            VALUES ('default', '1.2.0', '1.0.0', FALSE, 'https://swift-cart-700512652396.asia-southeast1.run.app/apk/dailymart.apk', 'Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.')
           `);
         }
 

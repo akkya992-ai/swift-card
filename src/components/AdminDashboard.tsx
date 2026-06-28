@@ -215,7 +215,7 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   const [apkLatestVersion, setApkLatestVersion] = useState('1.2.0');
   const [apkMinSupported, setApkMinSupported] = useState('1.0.0');
   const [apkForceUpdate, setApkForceUpdate] = useState(false);
-  const [apkDownloadUrl, setApkDownloadUrl] = useState('https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk');
+  const [apkDownloadUrl, setApkDownloadUrl] = useState('https://swift-cart-700512652396.asia-southeast1.run.app/apk/dailymart.apk');
   const [apkReleaseNotes, setApkReleaseNotes] = useState('Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.');
   const [apkLoading, setApkLoading] = useState(false);
   const [apkSuccess, setApkSuccess] = useState(false);
