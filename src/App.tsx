@@ -12,7 +12,9 @@ import SellerDashboard from './components/SellerDashboard';
 import RiderDashboard from './components/RiderDashboard';
 import LegalPages from './components/LegalPages';
 import RoleSelector from './components/RoleSelector';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { getIsCapacitor, getApiBase } from './apiConfig';
+import NetworkDebugPanel from './components/NetworkDebugPanel';
 import { playRiderDispatchSound } from './audioUtils';
 // @ts-ignore
 import dailyMartLogo from './assets/images/daily_mart_green_logo_1781598237470.jpg';
@@ -62,7 +64,7 @@ export default function App() {
 
   // Admin secure verification layer states
   const [isAdminPasswordVerified, setIsAdminPasswordVerified] = useState(() => {
-    return sessionStorage.getItem('is_admin_verified') === 'true';
+    return sessionStorage.getItem('is_admin_verified') === 'true' || localStorage.getItem('is_admin_verified') === 'true';
   });
   const [showAdminVerifyModal, setShowAdminVerifyModal] = useState(false);
   const [adminVerifyPasswordInput, setAdminVerifyPasswordInput] = useState('');
@@ -372,7 +374,16 @@ export default function App() {
       else setSelectedRole('customer');
     };
     
+    const handleApiBaseChange = () => {
+      if (typeof window !== 'undefined') {
+        const win = window as any;
+        win.__addDiagnosticLog?.('info', '🔑 [SESSION RECOVERY TRIGGER] API Base URL changed/auto-discovered. Retrying session restoration...');
+      }
+      tryRecoverySession();
+    };
+    
     window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('swiftcart_api_base_changed', handleApiBaseChange);
 
     // Guarantee minimum splash screen showtime for clean branding transition
     const timer = setTimeout(() => {
@@ -385,9 +396,22 @@ export default function App() {
         win.__addDiagnosticLog?.('info', '📱 React: App container component unmounted.');
       }
       window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('swiftcart_api_base_changed', handleApiBaseChange);
       clearTimeout(timer);
     };
   }, []);
+
+  // High fidelity diagnostics logging on every React render
+  if (typeof window !== 'undefined') {
+    const win = window as any;
+    console.log(`[REACT RENDER] currentPath="${currentPath}", selectedRole="${selectedRole}", isAdminPasswordVerified=${isAdminPasswordVerified}, currentUserEmail="${userProfile?.email || 'Guest'}"`);
+    win.__addDiagnosticLog?.('info', `[REACT RENDER] State: Path="${currentPath}", Role="${selectedRole}", AdminVerified=${isAdminPasswordVerified}, User="${userProfile?.email || 'Guest'}"`, {
+      currentPath,
+      selectedRole,
+      isAdminPasswordVerified,
+      currentUser: userProfile ? { id: userProfile.id, email: userProfile.email, role: userProfile.role } : null
+    });
+  }
 
   // APK update checker
   useEffect(() => {
@@ -564,7 +588,7 @@ export default function App() {
           // Show the verification modal. If they fail or cancel, they get redirected to customer home.
           setShowAdminVerifyModal(true);
         } else {
-          const isVerified = sessionStorage.getItem('is_admin_verified') === 'true';
+          const isVerified = sessionStorage.getItem('is_admin_verified') === 'true' || localStorage.getItem('is_admin_verified') === 'true';
           if (!isVerified) {
             setShowAdminVerifyModal(true);
           }
@@ -617,6 +641,7 @@ export default function App() {
       if (res.ok && data.success) {
         setIsAdminPasswordVerified(true);
         sessionStorage.setItem('is_admin_verified', 'true');
+        localStorage.setItem('is_admin_verified', 'true');
         setShowAdminVerifyModal(false);
         setAdminVerifyPasswordInput('');
         
@@ -737,7 +762,7 @@ export default function App() {
         }
         else if (pathname === '/' || pathname === '') {
           roleToSet = actualRole;
-          if (actualRole !== 'customer' && actualRole !== 'admin') {
+          if (actualRole !== 'customer') {
             window.history.replaceState({}, '', `/${actualRole}`);
             setCurrentPath(`/${actualRole}`);
             if (typeof window !== 'undefined') {
@@ -936,6 +961,7 @@ export default function App() {
     localStorage.removeItem('swiftcart_refresh_token');
     localStorage.removeItem('swiftcart_user_profile');
     sessionStorage.removeItem('is_admin_verified');
+    localStorage.removeItem('is_admin_verified');
     setIsAdminPasswordVerified(false);
     setUserProfile(null);
     setToken(null);
@@ -962,6 +988,7 @@ export default function App() {
     localStorage.removeItem('swiftcart_refresh_token');
     localStorage.removeItem('swiftcart_user_profile');
     sessionStorage.removeItem('is_admin_verified');
+    localStorage.removeItem('is_admin_verified');
     setToken(null);
     setUserProfile(null);
     setIsAuthenticated(false);
@@ -1278,65 +1305,73 @@ export default function App() {
       <div className={`flex-1 ${selectedRole === 'customer' ? 'p-0' : 'max-w-7xl mx-auto p-4 md:p-6 w-full'}`}>
         
         {selectedRole === 'customer' && (
-          <CustomerApp 
-            userProfile={userProfile}
-            onLogout={handleLogout}
-            reloadUserProfile={reloadUserProfile}
-            onSwitchRole={(newRole, customToken, customProfile) => {
-              if (newRole === 'admin') {
-                if (isAdminPasswordVerified) {
+          <ErrorBoundary>
+            <CustomerApp 
+              userProfile={userProfile}
+              onLogout={handleLogout}
+              reloadUserProfile={reloadUserProfile}
+              onSwitchRole={(newRole, customToken, customProfile) => {
+                if (newRole === 'admin') {
+                  if (isAdminPasswordVerified) {
+                    if (customToken && customProfile) {
+                      localStorage.setItem('swiftcart_jwt_token', customToken);
+                      setToken(customToken);
+                      setUserProfile(customProfile);
+                      setIsAuthenticated(true);
+                    }
+                    navigateRole('admin');
+                  } else {
+                    setPendingAdminSwitch(
+                      customToken && customProfile
+                        ? { customToken, customProfile }
+                        : null
+                    );
+                    setShowAdminVerifyModal(true);
+                    setAdminVerifyError('');
+                    setAdminVerifyPasswordInput('');
+                  }
+                } else {
                   if (customToken && customProfile) {
                     localStorage.setItem('swiftcart_jwt_token', customToken);
                     setToken(customToken);
                     setUserProfile(customProfile);
                     setIsAuthenticated(true);
+                    navigateRole(newRole);
+                  } else {
+                    navigateRole(newRole);
                   }
-                  navigateRole('admin');
-                } else {
-                  setPendingAdminSwitch(
-                    customToken && customProfile
-                      ? { customToken, customProfile }
-                      : null
-                  );
-                  setShowAdminVerifyModal(true);
-                  setAdminVerifyError('');
-                  setAdminVerifyPasswordInput('');
                 }
-              } else {
-                if (customToken && customProfile) {
-                  localStorage.setItem('swiftcart_jwt_token', customToken);
-                  setToken(customToken);
-                  setUserProfile(customProfile);
-                  setIsAuthenticated(true);
-                  navigateRole(newRole);
-                } else {
-                  navigateRole(newRole);
-                }
-              }
-            }}
-          />
+              }}
+            />
+          </ErrorBoundary>
         )}
 
         {selectedRole === 'admin' && isAdminPasswordVerified && (
-          <AdminDashboard 
-            userProfile={userProfile}
-            onLogout={handleLogout}
-          />
+          <ErrorBoundary>
+            <AdminDashboard 
+              userProfile={userProfile}
+              onLogout={handleLogout}
+            />
+          </ErrorBoundary>
         )}
 
         {selectedRole === 'seller' && (
-          <SellerDashboard 
-            userProfile={userProfile}
-            onLogout={handleLogout}
-          />
+          <ErrorBoundary>
+            <SellerDashboard 
+              userProfile={userProfile}
+              onLogout={handleLogout}
+            />
+          </ErrorBoundary>
         )}
 
         {selectedRole === 'rider' && (
-          <RiderDashboard 
-            userProfile={userProfile}
-            onLogout={handleLogout}
-            reloadUserProfile={reloadUserProfile}
-          />
+          <ErrorBoundary>
+            <RiderDashboard 
+              userProfile={userProfile}
+              onLogout={handleLogout}
+              reloadUserProfile={reloadUserProfile}
+            />
+          </ErrorBoundary>
         )}
 
       </div>
@@ -1539,6 +1574,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Persistent floating unified network debug panel to allow developers to audit logs and apply real-time API overrides on physical devices */}
+      <NetworkDebugPanel />
 
     </div>
   );

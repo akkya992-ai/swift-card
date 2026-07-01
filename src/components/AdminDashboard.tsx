@@ -195,6 +195,25 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
     return () => clearInterval(t);
   }, [userProfile.id]);
 
+  useEffect(() => {
+    console.log('[ADMIN DIAGNOSTICS] AdminDashboard mounted successfully.');
+    (window as any).__addDiagnosticLog?.('info', `🛠️ [ADMIN WORKSPACE] AdminDashboard component has successfully mounted in WebView.`, {
+      userEmail: userProfile?.email || 'N/A',
+      userId: userProfile?.id || 'N/A',
+      role: userProfile?.role || 'N/A'
+    });
+    return () => {
+      console.log('[ADMIN DIAGNOSTICS] AdminDashboard is unmounting.');
+      (window as any).__addDiagnosticLog?.('info', `🛠️ [ADMIN WORKSPACE] AdminDashboard is unmounting.`);
+    };
+  }, []);
+
+  // Admin dashboard render diagnostics
+  if (typeof window !== 'undefined') {
+    console.log(`[ADMIN RENDER] AdminDashboard rendering active views. Active tab: "${activeTab}".`);
+    (window as any).__addDiagnosticLog?.('info', `🛠️ [ADMIN WORKSPACE RENDER] AdminDashboard rendered successfully. Active tab: "${activeTab}"`);
+  }
+
   // Role Requests approval flow states
   const [roleRequests, setRoleRequests] = useState<any[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
@@ -215,7 +234,7 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   const [apkLatestVersion, setApkLatestVersion] = useState('1.2.0');
   const [apkMinSupported, setApkMinSupported] = useState('1.0.0');
   const [apkForceUpdate, setApkForceUpdate] = useState(false);
-  const [apkDownloadUrl, setApkDownloadUrl] = useState('https://swift-cart-700512652396.asia-southeast1.run.app/apk/dailymart.apk');
+  const [apkDownloadUrl, setApkDownloadUrl] = useState('https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk');
   const [apkReleaseNotes, setApkReleaseNotes] = useState('Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.');
   const [apkLoading, setApkLoading] = useState(false);
   const [apkSuccess, setApkSuccess] = useState(false);
@@ -477,10 +496,27 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
 
   useEffect(() => {
     fetchMetrics();
+    
+    const handleApiBaseChange = () => {
+      console.log('[AdminDashboard] API Base changed. Re-fetching operations metrics...');
+      setInitError(null);
+      fetchMetrics();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('swiftcart_api_base_changed', handleApiBaseChange);
+    }
+
     const interval = setInterval(() => {
       fetchMetrics();
     }, 6000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      clearInterval(interval);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('swiftcart_api_base_changed', handleApiBaseChange);
+      }
+    };
   }, []);
 
   const fetchMetrics = async () => {

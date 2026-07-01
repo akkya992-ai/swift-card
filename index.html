@@ -35,6 +35,9 @@
     <script>
       (function() {
         window.__diagnosticLogs = [];
+        var unsentLogs = [];
+        var isSending = false;
+
         window.__addDiagnosticLog = function(type, msg, meta) {
           var entry = {
             time: new Date().toLocaleTimeString(),
@@ -43,6 +46,7 @@
             meta: meta || null
           };
           window.__diagnosticLogs.push(entry);
+          unsentLogs.push(entry);
           
           // Propagate to actual log list if defined
           var listEl = document.getElementById('dm-diag-list');
@@ -66,6 +70,48 @@
             listEl.scrollTop = listEl.scrollHeight;
           }
         };
+
+        // Periodic background worker to send logs to the server
+        setInterval(function() {
+          if (unsentLogs.length === 0 || isSending) return;
+          isSending = true;
+
+          var logsToSubmit = unsentLogs.slice();
+          
+          // Resolve base url
+          var baseUrl = '';
+          var override = localStorage.getItem('swiftcart_api_base_override');
+          var autoDiscovered = localStorage.getItem('swiftcart_auto_discovered_backend');
+          if (override && override.trim() !== '') {
+            baseUrl = override.trim().replace(/\/+$/, '');
+          } else if (autoDiscovered && autoDiscovered.trim() !== '') {
+            baseUrl = autoDiscovered.trim().replace(/\/+$/, '');
+          } else {
+            baseUrl = 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
+          }
+          
+          var url = baseUrl + '/api/device-diagnostics';
+          
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', url, true);
+          xhr.setRequestHeader('Content-Type', 'application/json');
+          xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+              isSending = false;
+              if (xhr.status >= 200 && xhr.status < 300) {
+                // Clear successfully sent logs
+                unsentLogs = unsentLogs.filter(function(log) {
+                  return logsToSubmit.indexOf(log) === -1;
+                });
+              }
+            }
+          };
+          try {
+            xhr.send(JSON.stringify({ logs: logsToSubmit }));
+          } catch(e) {
+            isSending = false;
+          }
+        }, 2000);
 
         // Capture unhandled errors before React starts
         window.onerror = function(message, source, lineno, colno, error) {
@@ -130,6 +176,7 @@
         });
       })();
     </script>
+    <meta name="build-timestamp" content="2026-06-30T04:54:00Z" />
   </head>
   <body>
     <div id="root"></div>

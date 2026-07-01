@@ -39,24 +39,50 @@ export const getIsCapacitor = (): boolean => {
   // 3. User Agent markers
   const userAgent = navigator.userAgent ? navigator.userAgent.toLowerCase() : '';
   const isCapacitorUA = userAgent.includes('capacitor');
+  const isAndroidWebView = userAgent.includes('wv') || userAgent.includes('webview') || (userAgent.includes('android') && userAgent.includes('version/'));
 
   // 4. Capacitor WebView standard address mapping:
   // Android/iOS Capacitor local servers are hosted on localhost but with empty port (e.g. http://localhost)
   // Standard computer Web browser localhost has a port (e.g. :5173 or :3000)
   const isCapacitorAndroidOrigin = window.location.hostname === 'localhost' && window.location.port === '';
   
+  // 5. Additional physical device detection: if hostname is localhost but we are inside an Android package/webview, or protocol is file:
+  const isLocalMobileWebView = (userAgent.includes('android') || userAgent.includes('iphone') || userAgent.includes('ipad')) && 
+                                (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:');
+
   // Combine rules securely: if verified native platform flag is true,
   // or running on a native scheme or Capacitor UA, or mobile WebView native mapping matches
-  return !!(isNativePlatform || isNativeProtocol || isCapacitorUA || isCapacitorAndroidOrigin);
+  return !!(isNativePlatform || isNativeProtocol || isCapacitorUA || isAndroidWebView || isCapacitorAndroidOrigin || isLocalMobileWebView);
 };
 
-// Self-healing legacy local storage cleanup block has been bypassed to allow development testing in local APK WebView.
-
 export const CANDIDATE_BACKENDS = [
-  'https://swift-cart-700512652396.asia-southeast1.run.app',
   'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app',
   'https://ais-dev-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app'
 ];
+
+// Self-healing legacy local storage cleanup block to proactively purge outdated/invalid backend domains
+if (typeof window !== 'undefined') {
+  try {
+    const keysToClean = ['swiftcart_auto_discovered_backend', 'swiftcart_api_base_override'];
+    keysToClean.forEach(key => {
+      const val = localStorage.getItem(key);
+      if (val) {
+        const cleanVal = val.trim().replace(/\/+$/, '');
+        const isStaleHost = cleanVal.includes('swift-cart-700512652396');
+        const isNotHttp = !cleanVal.startsWith('http');
+        const isUnknownBackend = key === 'swiftcart_auto_discovered_backend' && !CANDIDATE_BACKENDS.includes(cleanVal);
+        
+        if (isStaleHost || isNotHttp || isUnknownBackend) {
+          localStorage.removeItem(key);
+          addDiagEntry('info', `🧹 [Self-Healing] Purged stale/invalid domain from "${key}": ${val}`);
+          console.log(`[API CONFIG] Purged stale/invalid domain from "${key}": ${val}`);
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('[API CONFIG] Failed to execute self-healing local storage cleanup:', err);
+  }
+}
 
 export const startBackendAutoDiscovery = () => {
   if (typeof window === 'undefined') return;
@@ -96,6 +122,11 @@ export const startBackendAutoDiscovery = () => {
               // Re-update the config in real-time
               if (typeof win.__triggerApiConfigRefresh === 'function') {
                 win.__triggerApiConfigRefresh(base);
+              }
+              
+              // Notify components reactively
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('swiftcart_api_base_changed', { detail: { apiBase: base } }));
               }
             } else {
               addDiagEntry('warn', `⚠️ [AUTO DISCOVERY REJECT] Backend at ${base} returned JSON but missing status 'ok'.`);
@@ -185,8 +216,8 @@ export const getApiBase = (): string => {
   // 5. Fallback to Cloud Run backend URL
   // For native platforms we default to our persistent workspace app domain to ensure local changes sync instantly.
   const fallbackUrl = getIsCapacitor()
-    ? 'https://swift-cart-700512652396.asia-southeast1.run.app'
-    : (typeof window !== 'undefined' ? window.location.origin : 'https://swift-cart-700512652396.asia-southeast1.run.app');
+    ? 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app'
+    : (typeof window !== 'undefined' ? window.location.origin : 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app');
   logConfigState(fallbackUrl, 'Default Fallback (Cloud Run backend)');
   return fallbackUrl;
 };
@@ -275,7 +306,7 @@ export const resolveApiUrl = (url: string): string => {
       let nativeBase = apiBase;
       if (!nativeBase || nativeBase === '/' || !nativeBase.startsWith('http')) {
         nativeBase = 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
-      } else if (nativeBase.includes('localhost')) {
+      } else if (nativeBase.includes('localhost') || nativeBase.includes('swift-cart-700512652396')) {
         // A native platform should never request localhost of the host machine unless customized
         nativeBase = 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app';
       }

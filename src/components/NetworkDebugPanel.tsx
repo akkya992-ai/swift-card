@@ -55,7 +55,11 @@ export default function NetworkDebugPanel() {
         localStorage.removeItem('swiftcart_api_base_override');
       }
       setCustomOverride(trimmed);
-      setApiBase(getApiBase());
+      const activeBase = getApiBase();
+      setApiBase(activeBase);
+      
+      // Dispatch custom event to notify other mounted components in real-time
+      window.dispatchEvent(new CustomEvent('swiftcart_api_base_changed', { detail: { apiBase: activeBase } }));
       
       // Flash a beautiful notification
       setShowNotification(true);

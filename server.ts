@@ -1681,7 +1681,7 @@ const DEFAULT_APP_SETTINGS: AppSettingsRecord = {
   latestVersion: '1.2.0',
   minimumSupportedVersion: '1.0.0',
   forceUpdate: false,
-  apkUrl: 'https://swift-cart-700512652396.asia-southeast1.run.app/apk/dailymart.apk',
+  apkUrl: 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk',
   releaseNotes: 'Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.'
 };
 
@@ -1924,7 +1924,7 @@ async function syncWithSupabaseOnStartup(): Promise<DatabaseSchema> {
             latest_version VARCHAR(50) NOT NULL DEFAULT '1.2.0',
             minimum_supported_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
             force_update BOOLEAN NOT NULL DEFAULT FALSE,
-            apk_download_url TEXT NOT NULL DEFAULT 'https://swift-cart-700512652396.asia-southeast1.run.app/apk/dailymart.apk',
+            apk_download_url TEXT NOT NULL DEFAULT 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk',
             release_notes TEXT NOT NULL DEFAULT 'Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.',
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
           );
@@ -1935,7 +1935,7 @@ async function syncWithSupabaseOnStartup(): Promise<DatabaseSchema> {
         if (parseInt(settingsRows[0].count) === 0) {
           await client.query(`
             INSERT INTO app_settings (id, latest_version, minimum_supported_version, force_update, apk_download_url, release_notes)
-            VALUES ('default', '1.2.0', '1.0.0', FALSE, 'https://swift-cart-700512652396.asia-southeast1.run.app/apk/dailymart.apk', 'Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.')
+            VALUES ('default', '1.2.0', '1.0.0', FALSE, 'https://ais-pre-u4qsdpfkg63jdkgnj3beph-260720568939.asia-southeast1.run.app/apk/dailymart.apk', 'Daily Mart version 1.2.0 is now available! Includes extremely low startup overheads, GPS distance calculated live tracking, and robust offline queue delivery engines.')
           `);
         }
 
@@ -4552,6 +4552,42 @@ app.post('/api/auth/refresh', async (req, res) => {
 });
 
 // Single Device Logout
+// Single Device Logout
+app.post('/api/device-diagnostics', express.json(), (req, res) => {
+  const { logs } = req.body;
+  if (Array.isArray(logs)) {
+    try {
+      const logFilePath = path.join(process.cwd(), 'device-logs.json');
+      let currentLogs = [];
+      if (fs.existsSync(logFilePath)) {
+        try {
+          currentLogs = JSON.parse(fs.readFileSync(logFilePath, 'utf8'));
+        } catch (parseErr) {
+          currentLogs = [];
+        }
+      }
+      currentLogs = currentLogs.concat(logs);
+      if (currentLogs.length > 2000) {
+        currentLogs = currentLogs.slice(currentLogs.length - 2000);
+      }
+      fs.writeFileSync(logFilePath, JSON.stringify(currentLogs, null, 2), 'utf8');
+    } catch (e: any) {
+      console.error('Error writing device logs:', e?.message || e);
+    }
+  }
+  return res.json({ success: true });
+});
+
+app.get('/api/device-diagnostics', (req, res) => {
+  try {
+    const logFilePath = path.join(process.cwd(), 'device-logs.json');
+    if (fs.existsSync(logFilePath)) {
+      return res.sendFile(logFilePath);
+    }
+  } catch (e) {}
+  return res.json([]);
+});
+
 app.post('/api/auth/logout', async (req, res) => {
   const { refreshToken } = req.body;
   if (refreshToken) {

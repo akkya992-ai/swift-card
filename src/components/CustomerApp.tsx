@@ -53,6 +53,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Category, Product, CartItem, Order, UserRole } from '../types';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { Browser } from '@capacitor/browser';
+import dbBackup from '../../database.backup.json';
 
 // Import our modular sub-components
 import LiveTracking from './LiveTracking';
@@ -98,6 +99,15 @@ interface UserReview {
 export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, onSwitchRole }: CustomerAppProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  
+  React.useEffect(() => {
+    console.log(`[TRACE STEP 2: React State 'products' updated] Count = ${products.length}`);
+    if (products.length > 0) {
+      console.log(`[TRACE STEP 2: Sample Products (First 3)]`, products.slice(0, 3).map(p => ({ id: p.id, name: p.name, category: p.category, sellerName: p.sellerName })));
+    }
+    (window as any).__addDiagnosticLog?.('info', `[TRACE STEP 2: React State 'products' updated] Count = ${products.length}`, { productsCount: products.length });
+  }, [products]);
+
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -654,6 +664,18 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
     fetchBanners();
     fetchOrders();
 
+    const handleApiBaseChange = () => {
+      console.log('[CustomerApp] API Base changed. Re-fetching fresh catalog and orders...');
+      fetchCategories();
+      fetchProducts();
+      fetchBanners();
+      fetchOrders();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('swiftcart_api_base_changed', handleApiBaseChange);
+    }
+
     // Create persistent intervals to simulate order updates and background store alerts
     const interval = setInterval(() => {
       fetchOrders();
@@ -689,6 +711,9 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
       clearInterval(interval);
       clearInterval(pushInterval);
       clearInterval(alertSystem);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('swiftcart_api_base_changed', handleApiBaseChange);
+      }
     };
   }, []);
 
@@ -732,22 +757,51 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
       const res = await fetch('/api/categories');
       if (res.ok) {
         const data = await res.json();
+        console.log(`[CUSTOMER DIAGNOSTICS] /api/categories returned ${Array.isArray(data) ? data.length : 0} categories.`);
+        (window as any).__addDiagnosticLog?.('info', `[CUSTOMER DIAGNOSTICS] /api/categories returned ${Array.isArray(data) ? data.length : 0} categories.`, { categoriesCount: Array.isArray(data) ? data.length : 0 });
         setCategories(data);
+      } else {
+        console.warn(`[CUSTOMER DIAGNOSTICS] /api/categories request failed with status: ${res.status}. Falling back to dbBackup.`);
+        (window as any).__addDiagnosticLog?.('error', `[CUSTOMER DIAGNOSTICS] /api/categories request failed with status: ${res.status}`);
+        if (dbBackup && Array.isArray(dbBackup.categories)) {
+          setCategories(dbBackup.categories as any[]);
+        }
       }
-    } catch (e) {
-      console.warn('Error fetching categories', e);
+    } catch (e: any) {
+      console.warn('Error fetching categories, falling back to dbBackup', e);
+      (window as any).__addDiagnosticLog?.('error', `[CUSTOMER DIAGNOSTICS] Error fetching categories: ${e.message}`);
+      if (dbBackup && Array.isArray(dbBackup.categories)) {
+        setCategories(dbBackup.categories as any[]);
+      }
     }
   };
 
   const fetchProducts = async () => {
     try {
+      console.log(`[TRACE STEP 1: Initiating fetch('/api/products')]`);
       const res = await fetch('/api/products');
+      console.log(`[TRACE STEP 1: fetch('/api/products') response received] status = ${res.status}, ok = ${res.ok}`);
       if (res.ok) {
         const data = await res.json();
+        console.log(`[TRACE STEP 1: parsed response JSON successfully] Count = ${Array.isArray(data) ? data.length : typeof data}`);
+        console.log(`[CUSTOMER DIAGNOSTICS] /api/products returned ${Array.isArray(data) ? data.length : 0} products.`);
+        (window as any).__addDiagnosticLog?.('info', `[TRACE STEP 1: Parsed response JSON] Count = ${Array.isArray(data) ? data.length : 0} products.`, { productsCount: Array.isArray(data) ? data.length : 0 });
         setProducts(data);
+      } else {
+        console.warn(`[CUSTOMER DIAGNOSTICS] /api/products request failed with status: ${res.status}. Falling back to dbBackup.`);
+        (window as any).__addDiagnosticLog?.('error', `[CUSTOMER DIAGNOSTICS] /api/products request failed with status: ${res.status}`);
+        if (dbBackup && Array.isArray(dbBackup.products)) {
+          console.log(`[TRACE STEP 1 (Fallback): Loading fallback products] Count = ${dbBackup.products.length}`);
+          setProducts(dbBackup.products as any[]);
+        }
       }
-    } catch (e) {
-      console.warn('Error fetching products', e);
+    } catch (e: any) {
+      console.warn('Error fetching products, falling back to dbBackup', e);
+      (window as any).__addDiagnosticLog?.('error', `[CUSTOMER DIAGNOSTICS] Error fetching products: ${e.message}`);
+      if (dbBackup && Array.isArray(dbBackup.products)) {
+        console.log(`[TRACE STEP 1 (Fallback Exception): Loading fallback products] Count = ${dbBackup.products.length}`);
+        setProducts(dbBackup.products as any[]);
+      }
     }
   };
 
@@ -1243,13 +1297,52 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
   };
 
   // Filter products by category tab & search keyword matching
-  const filteredProducts = products.filter(p => {
-    const matchCat = selectedCategory ? p.category === selectedCategory : true;
-    const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                        p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        p.sellerName.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchCat && matchSearch;
-  });
+  const filteredProducts = (() => {
+    const filterCatMatches: Product[] = [];
+    const filterSearchMatches: Product[] = [];
+    
+    const result = products.filter(p => {
+      // Robust fallbacks to prevent crashes on null/undefined properties
+      const pCategory = p.category || '';
+      const pName = p.name || '';
+      const pDescription = p.description || '';
+      const pSellerName = p.sellerName || '';
+
+      const matchCat = selectedCategory ? pCategory === selectedCategory : true;
+      if (matchCat) filterCatMatches.push(p);
+      
+      const matchSearch = pName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          pDescription.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          pSellerName.toLowerCase().includes(searchQuery.toLowerCase());
+      if (matchSearch) filterSearchMatches.push(p);
+      
+      return matchCat && matchSearch;
+    });
+
+    // Logging for runtime verification
+    console.log(`[TRACE STEP 3: filteredProducts calculation] Input raw products count = ${products.length}, selectedCategory = ${selectedCategory || 'None'}, searchQuery = "${searchQuery}"`);
+    console.log(`[TRACE STEP 3: filteredProducts match results] CatMatch = ${filterCatMatches.length}, SearchMatch = ${filterSearchMatches.length}, Output filteredProducts count = ${result.length}`);
+    
+    (window as any).__addDiagnosticLog?.('info', `[TRACE STEP 3: FilteredProducts] Raw = ${products.length} -> Filtered = ${result.length} (Cat: ${selectedCategory || 'None'}, Query: "${searchQuery}")`);
+
+    // Log to diagnostic panel
+    if (products.length > 0) {
+      const whyEmpty = result.length === 0 
+        ? (filterCatMatches.length === 0 
+            ? `Category filter "${selectedCategory}" removed all items.` 
+            : `Search filter "${searchQuery}" removed all remaining ${filterCatMatches.length} items.`)
+        : 'Rendering active products';
+        
+      (window as any).__addDiagnosticLog?.('info', `[PRODUCTS GRID] Render Grid: Raw=${products.length}, CatMatch=${filterCatMatches.length}, SearchMatch=${filterSearchMatches.length}, Final=${result.length}. Status: ${whyEmpty}`, {
+        selectedCategory,
+        searchQuery,
+        rawCount: products.length,
+        finalCount: result.length
+      });
+    }
+
+    return result;
+  })();
 
   const renderBlinkitProductCard = (p: Product, isCarousel: boolean = false) => {
     const currentVariant = selectedVariants[p.id] || (p.variants && p.variants[0]) || p.unit;
@@ -1970,6 +2063,12 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                 </div>
 
                 <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-none select-none pl-1">
+                  {(() => {
+                    const count = products.filter(p => p.isTrending).length;
+                    console.log(`[TRACE STEP 4: Trending Carousel Render] Count = ${count}`);
+                    (window as any).__addDiagnosticLog?.('info', `[TRACE STEP 4: Trending Carousel Render] Count = ${count}`);
+                    return null;
+                  })()}
                   {products.filter(p => p.isTrending).map((p) => renderBlinkitProductCard(p, true))}
                 </div>
               </div>
@@ -2004,6 +2103,11 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
+                    {(() => {
+                      console.log(`[TRACE STEP 4: ProductGrid Render (Search Mode)] Count = ${filteredProducts.length}`);
+                      (window as any).__addDiagnosticLog?.('info', `[TRACE STEP 4: ProductGrid Render (Search Mode)] Count = ${filteredProducts.length}`);
+                      return null;
+                    })()}
                     {filteredProducts.map((p) => renderBlinkitProductCard(p, false))}
                   </div>
                 )}
@@ -2026,6 +2130,12 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                       renderShimmerSkeleton(6)
                     ) : (
                       <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-none select-none pl-1">
+                        {(() => {
+                          const count = products.filter(p => p.isRecommended).length;
+                          console.log(`[TRACE STEP 4: Recommended Carousel Render] Count = ${count}`);
+                          (window as any).__addDiagnosticLog?.('info', `[TRACE STEP 4: Recommended Carousel Render] Count = ${count}`);
+                          return null;
+                        })()}
                         {products.filter(p => p.isRecommended).map((p) => renderBlinkitProductCard(p, true))}
                       </div>
                     )}
@@ -2144,6 +2254,11 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
+                  {(() => {
+                    console.log(`[TRACE STEP 4: ProductGrid Render (Normal Shelf Mode)] Count = ${filteredProducts.length}`);
+                    (window as any).__addDiagnosticLog?.('info', `[TRACE STEP 4: ProductGrid Render (Normal Shelf Mode)] Count = ${filteredProducts.length}`);
+                    return null;
+                  })()}
                   {filteredProducts.map((p) => renderBlinkitProductCard(p, false))}
                 </div>
               )}
