@@ -90,10 +90,12 @@ export default function LiveTracking({
   const handleTriggerRefund = async () => {
     setIsCancelling(true);
     try {
+      const token = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch(`/api/orders/${order.id}/refund`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           refundReason: cancelReason

@@ -838,7 +838,10 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
     if (!userProfile) return;
     try {
       const queryParam = userProfile.phone ? `phone=${encodeURIComponent(userProfile.phone)}` : `email=${encodeURIComponent(userProfile.email)}`;
-      const res = await fetch(`/api/orders?${queryParam}`);
+      const token = localStorage.getItem('swiftcart_jwt_token');
+      const res = await fetch(`/api/orders?${queryParam}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
       if (res.ok) {
         const contentType = res.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
@@ -1215,9 +1218,13 @@ export default function CustomerApp({ userProfile, onLogout, reloadUserProfile, 
         deliveryInstructions
       };
 
+      const token = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch('/api/orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(orderPayload)
       });
 

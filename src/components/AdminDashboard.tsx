@@ -522,7 +522,10 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   const fetchMetrics = async () => {
     try {
       // Load orders
-      const oRes = await fetch('/api/orders');
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
+      const oRes = await fetch('/api/orders', {
+        headers: savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {}
+      });
       if (!oRes.ok) {
         if (oRes.status === 401 || oRes.status === 403) {
           throw new Error('Your admin session has expired (Unauthorized 401/403). Please sign out and log back in.');
@@ -558,7 +561,6 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
       }
 
       // Load sellers
-      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const sRes = await fetch('/api/sellers', {
         headers: savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {}
       });
@@ -731,9 +733,13 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
 
   const handleUpdateOrderStatus = async (orderId: string, status: string) => {
     try {
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {})
+        },
         body: JSON.stringify({ status })
       });
 
@@ -752,9 +758,13 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
     if (!rider) return;
 
     try {
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {})
+        },
         body: JSON.stringify({
           status: 'dispatched',
           riderId: rider.id,

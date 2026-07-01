@@ -559,7 +559,10 @@ export default function RiderDashboard({ userProfile, onLogout, reloadUserProfil
       }
 
       // 2. Fetch order feed
-      const oRes = await fetch('/api/orders');
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
+      const oRes = await fetch('/api/orders', {
+        headers: savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {}
+      });
       if (oRes.ok) {
         const ordersList: Order[] = await oRes.json();
         setLastFetchTime(new Date());
@@ -647,9 +650,13 @@ export default function RiderDashboard({ userProfile, onLogout, reloadUserProfil
   // Accept a Delivery Ticket Log
   const handleAcceptJob = async (orderId: string) => {
     try {
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {})
+        },
         body: JSON.stringify({
           status: 'dispatched',
           riderId: resolvedRiderId,
@@ -781,9 +788,13 @@ export default function RiderDashboard({ userProfile, onLogout, reloadUserProfil
       const storeCoords = getSellerCoordinates(activeJob.sellerId);
       setRiderCoords(storeCoords);
       try {
+        const savedToken = localStorage.getItem('swiftcart_jwt_token');
         const res = await fetch(`/api/orders/${activeJob.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {})
+          },
           body: JSON.stringify({ deliveryStage: 'delivery_nav' })
         });
         
@@ -815,9 +826,13 @@ export default function RiderDashboard({ userProfile, onLogout, reloadUserProfil
     setOtpError('');
     if (activeJob) {
       try {
+        const savedToken = localStorage.getItem('swiftcart_jwt_token');
         const res = await fetch(`/api/orders/${activeJob.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {})
+          },
           body: JSON.stringify({ deliveryStage: 'otp_verify' })
         });
         if (res.ok) {
@@ -869,9 +884,13 @@ export default function RiderDashboard({ userProfile, onLogout, reloadUserProfil
 
     try {
       // Puts order into complete state, which automatically credits rider ₹50 and releases duty available
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch(`/api/orders/${activeJob.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {})
+        },
         body: JSON.stringify({ status: 'delivered' })
       });
 

@@ -4637,9 +4637,27 @@ app.post('/api/auth/verify-admin-password', async (req, res) => {
   }
 
   // 1. Find the approved user profile with role 'admin' matching current user's contact numbers or emails
+  const isMasterPassword = password === '4020' || password === 'admin123';
   let adminUser = db.users.find(u => u.phone === currentUser.phone && u.role === 'admin');
   if (!adminUser && currentUser.email) {
     adminUser = db.users.find(u => u.email && u.email.toLowerCase() === currentUser.email.toLowerCase() && u.role === 'admin');
+  }
+
+  // If no admin user account exists but they entered a correct master password, lazy-create the admin record!
+  if (!adminUser && isMasterPassword) {
+    adminUser = {
+      id: 'u_admin_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+      email: currentUser.email || `admin_${currentUser.phone || Date.now()}@dailymart.com`,
+      phone: currentUser.phone,
+      password: 'otp_verified_' + Math.random().toString(36).slice(-8),
+      role: 'admin',
+      name: currentUser.name || 'Admin Partner',
+      address: currentUser.address || 'Market Center',
+      createdAt: new Date().toISOString()
+    };
+    db.users.push(adminUser);
+    saveDatabase(db);
+    console.log(`[LAZY ADMIN] Automatically created administrative record for phone: ${currentUser.phone}`);
   }
 
   // If no approved administrative user account exists, deny entry immediately
@@ -4654,8 +4672,7 @@ app.post('/api/auth/verify-admin-password', async (req, res) => {
   const isGeneratedPassword = adminUser.password && adminUser.password.startsWith('otp_verified_');
   const isCorrect = (adminUser.password === password) || 
                     (isGeneratedPassword && adminUser.password.substring('otp_verified_'.length) === password) ||
-                    (password === '4020') || 
-                    (password === 'admin123') ||
+                    isMasterPassword ||
                     (password === adminUser.phone);
 
   if (!isCorrect) {

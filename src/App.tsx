@@ -237,7 +237,10 @@ export default function App() {
     const seedActiveIds = async () => {
       if (!localStorage.getItem('swiftcart_jwt_token')) return;
       try {
-        const res = await fetch('/api/orders');
+        const savedToken = localStorage.getItem('swiftcart_jwt_token');
+        const res = await fetch('/api/orders', {
+          headers: savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {}
+        });
         if (res.ok) {
           const orders = await res.json();
           setLastCheckedSeenIds(prev => {
@@ -262,7 +265,10 @@ export default function App() {
     const checkBackgroundAlarms = async () => {
       if (!localStorage.getItem('swiftcart_jwt_token')) return;
       try {
-        const res = await fetch('/api/orders');
+        const savedToken = localStorage.getItem('swiftcart_jwt_token');
+        const res = await fetch('/api/orders', {
+          headers: savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {}
+        });
         if (!res.ok) return;
         const orders: any[] = await res.json();
 

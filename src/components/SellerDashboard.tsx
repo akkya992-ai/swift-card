@@ -362,7 +362,10 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
       }
 
       // 2. Fetch live orders containing items from this seller store
-      const oRes = await fetch('/api/orders');
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
+      const oRes = await fetch('/api/orders', {
+        headers: savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {}
+      });
       if (oRes.ok) {
         const oData: Order[] = await oRes.json();
         
@@ -431,9 +434,13 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
   const handleAcceptOrder = async (orderId: string) => {
     try {
       setLoading(true);
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {})
+        },
         body: JSON.stringify({ 
           packingStatus: 'accepted' // sets current packing step
         })
@@ -471,9 +478,13 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
 
     try {
       setLoading(true);
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch(`/api/orders/${rejectingOrder.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {})
+        },
         body: JSON.stringify({ 
           status: 'rejected',
           packingStatus: 'rejected',
@@ -511,9 +522,13 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
   // Step-by-Step advancement of packing stages
   const handleTransitionPackingStatus = async (orderId: string, nextStage: 'preparing' | 'packing' | 'delayed') => {
     try {
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {})
+        },
         body: JSON.stringify({ packingStatus: nextStage })
       });
 
@@ -529,9 +544,13 @@ export default function SellerDashboard({ userProfile, onLogout }: SellerDashboa
   // so that nearby Hero Electric e-riders instantly see it in their map queue feeds!
   const handleMarkReadyForPickup = async (orderId: string) => {
     try {
+      const savedToken = localStorage.getItem('swiftcart_jwt_token');
       const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(savedToken ? { 'Authorization': `Bearer ${savedToken}` } : {})
+        },
         body: JSON.stringify({ 
           status: 'confirmed', // available for riders
           packingStatus: 'ready' 
