@@ -1352,6 +1352,16 @@ export default function App() {
           </ErrorBoundary>
         )}
 
+        {(() => {
+          console.log({
+            selectedRole,
+            isAdminPasswordVerified,
+            userProfile,
+            token,
+          });
+          return null;
+        })()}
+
         {selectedRole === 'admin' && isAdminPasswordVerified && (
           <ErrorBoundary>
             <AdminDashboard 

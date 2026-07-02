@@ -81,6 +81,8 @@ export interface Banner {
 }
 
 export default function AdminDashboard({ userProfile, onLogout }: AdminDashboardProps) {
+  console.log("AdminDashboard mounted");
+  console.log("AdminDashboard render");
   const [initLoading, setInitLoading] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -1270,6 +1272,7 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   }, [customers, customerSearch]);
 
   if (initError) {
+    console.log("AdminDashboard return: initError");
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-white font-sans">
         <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-3xl shadow-2xl p-8 text-center space-y-6 relative overflow-hidden">
@@ -1321,6 +1324,7 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
   }
 
   if (initLoading) {
+    console.log("AdminDashboard return: initLoading");
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-white font-sans">
         <div className="max-w-sm w-full text-center space-y-6">
@@ -1348,6 +1352,7 @@ export default function AdminDashboard({ userProfile, onLogout }: AdminDashboard
     );
   }
 
+  console.log("AdminDashboard return: main UI");
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 md:p-6 space-y-6">
       
